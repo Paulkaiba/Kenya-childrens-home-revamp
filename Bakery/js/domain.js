@@ -100,9 +100,15 @@ export class Scheduler {
   earliest(lead) {
     const now = this.clock.now();
     let t = new Date(now.getTime() + Math.max(lead, this.minPrep) * H);
-    // Ordering after closing hours pushes the earliest slot to the afternoon of the next day.
     if (now.getHours() >= this.lateCutoffHour) {
+      // Evening/overnight order (5pm-midnight): too close to the next opening
+      // for a normal morning slot, so push to no earlier than 3pm the next day.
       const floor = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, this.lateFloorHour);
+      if (t < floor) t = floor;
+    } else if (now.getHours() < this.open) {
+      // Early-morning order (midnight-opening): still can't get today, but the
+      // next day is already 24h+ away, so the full day is available from opening.
+      const floor = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, this.open);
       if (t < floor) t = floor;
     }
     return t;
