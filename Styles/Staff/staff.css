@@ -1,0 +1,11 @@
+.login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg)}
+.login-box{width:min(380px,92vw)}
+.side button.locked{opacity:.45;cursor:not-allowed}
+.status{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600}
+.status-Received{background:#fff3cd;color:#8a6d00}
+.status-Baking{background:#ffe0b2;color:#a15c00}
+.status-Ready{background:#d4edda;color:#1e7e34}
+.status-Collected{background:#e2e3e5;color:#41464b}
+.status-Cancelled{background:#f8d7da;color:#a71d2a}
+.table-wrap{overflow-x:auto}
+table{min-width:720px}

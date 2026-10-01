@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>KCH Bakery — Staff Login</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../Styles/Bakery/bakery.css">
+<link rel="stylesheet" href="../Styles/Staff/staff.css"></head>
+<body><div class="login-wrap"><div class="box login-box">
+  <h2>KCH Bakery — Staff</h2>
+  <p class="sub">Sign in to manage orders and production.</p>
+  <label>Username</label><input id="u" placeholder="e.g. amina">
+  <label>Password</label><input id="p" type="password">
+  <p></p><button class="primary" id="go" style="width:100%">Sign in</button>
+  <p id="err" class="sub" style="color:#c00"></p>
+  <p class="sub" style="margin-top:18px">Demo accounts — manager: amina / manager123 &nbsp;·&nbsp; baker: peter / baker123</p>
+</div></div>
+<script type="module">
+  import { StaffDirectory, AuthService, LocalSessionStore, AuthError } from './js/staffDomain.js';
+  const auth = new AuthService(new StaffDirectory(), new LocalSessionStore());
+  if (auth.current()) location.href = 'dashboard.html';
+  const go = () => {
+    try { auth.login(document.getElementById('u').value, document.getElementById('p').value); location.href = 'dashboard.html'; }
+    catch (e) { if (e instanceof AuthError) document.getElementById('err').textContent = e.message; else throw e; }
+  };
+  document.getElementById('go').addEventListener('click', go);
+  document.getElementById('p').addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+</script></body></html>
