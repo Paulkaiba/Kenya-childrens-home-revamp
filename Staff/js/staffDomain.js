@@ -32,13 +32,15 @@ export class AuthService {
   login(username, password) {
     const staff = this.directory.find(username);
     if (!staff || !staff.checkPassword(password)) throw new AuthError('Incorrect username or password');
-    this.session.set({ id: staff.id, name: staff.name, username: staff.username, role: staff.role });
+    // isManager is stored as plain data, not relied on as a getter — a getter doesn't
+    // survive the JSON round-trip through localStorage, which caused manager accounts
+    // to come back looking like bakers after login.
+    this.session.set({ id: staff.id, name: staff.name, username: staff.username, role: staff.role, isManager: staff.isManager });
     return staff;
   }
   logout() { this.session.clear(); }
   current() { return this.session.get(); }
 }
-// Kept separate from the login check above so tests can run without real storage.
 export class SessionStore {
   constructor() { this._v = null; }
   set(v) { this._v = v; }
@@ -51,14 +53,33 @@ export class LocalSessionStore extends SessionStore {
   clear() { localStorage.removeItem('kch-staff-session'); }
 }
 
-// ---- Order queue helpers ----
+// ---- Order queue: one row per line item, not per order ----
+// A single order can hold several different products (cakes, bread, pastries), each
+// needing its own baking/ready/collected status and its own pickup time (the bucket
+// it belongs to). Flattening to one row per line is what lets staff track each item
+// on its own, while `serial` still ties every row back to the same customer order.
 const dateKey = iso => new Date(iso).toISOString().slice(0, 10);
 
-export function filterOrders(orders, { status, category, date } = {}) {
-  return orders.filter(o => {
-    if (status && o.status !== status) return false;
-    if (category && !(o.lines.some(l => l.bucket === category))) return false;
-    if (date && !Object.values(o.pickups || {}).some(t => dateKey(t) === date)) return false;
+export function flattenLines(orders) {
+  const rows = [];
+  orders.forEach(o => {
+    o.lines.forEach(l => {
+      rows.push({
+        serial: o.serial, orderStatus: o.status, createdAt: o.createdAt,
+        customer: o.customer, id: l.id, name: l.name, size: l.size, flavour: l.flavour,
+        message: l.message, qty: l.qty, price: l.price, bucket: l.bucket,
+        status: l.status || 'Received', pickup: o.pickups?.[l.bucket] || null,
+      });
+    });
+  });
+  return rows;
+}
+
+export function filterLines(rows, { status, category, date } = {}) {
+  return rows.filter(r => {
+    if (status && r.status !== status) return false;
+    if (category && r.bucket !== category) return false;
+    if (date && (!r.pickup || dateKey(r.pickup) !== date)) return false;
     return true;
   });
 }
@@ -70,18 +91,25 @@ export function nextStatus(status) {
 }
 
 // ---- Production summary: "what do we need to bake for this date" ----
-// Groups every non-cancelled order line whose own bucket is scheduled for the
-// given date, by category then by product+size+flavour, with running totals.
+// Groups every non-cancelled line scheduled for the given date by category, then by
+// exact product+size+flavour variant, with each variant carrying the list of orders
+// that contributed to it (qty, cake message, customer, status) for the drill-down page.
 export function productionSummary(orders, date) {
   const summary = { bread: { total: 0, items: {} }, cake: { total: 0, items: {} }, pastry: { total: 0, items: {} } };
   orders.forEach(o => {
     if (o.status === 'Cancelled') return;
     o.lines.forEach(l => {
+      if (l.status === 'Cancelled') return;
       const t = o.pickups?.[l.bucket];
       if (!t || dateKey(t) !== date) return;
       const bucket = summary[l.bucket]; if (!bucket) return;
       const key = `${l.name} (${l.size}${l.flavour ? ', ' + l.flavour : ''})`;
-      bucket.items[key] = (bucket.items[key] || 0) + l.qty;
+      if (!bucket.items[key]) bucket.items[key] = { qty: 0, entries: [] };
+      bucket.items[key].qty += l.qty;
+      bucket.items[key].entries.push({
+        serial: o.serial, lineId: l.id, customer: o.customer.name, qty: l.qty,
+        message: l.message || null, status: l.status || 'Received', pickup: t,
+      });
       bucket.total += l.qty;
     });
   });
