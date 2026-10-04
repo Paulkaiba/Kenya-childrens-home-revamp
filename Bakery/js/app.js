@@ -1,14 +1,18 @@
-import { getCatalog, policyFromRules, Cart, Customer, Scheduler, Clock, OrderService, LocalStorageOrderRepository, ValidationError } from './domain.js';
+import { policyFromRules, Cart, Customer, Scheduler, Clock, OrderService, LocalStorageOrderRepository, LocalStorageProductRepository, ValidationError } from './domain.js';
 import { initStore, getRules, isDayFull, onDataChange } from '../../shared/store.js';
 
 initStore();
-import { Cart, Customer, defaultPolicy, Scheduler, Clock, OrderService, LocalStorageOrderRepository, LocalStorageProductRepository, ValidationError } from './domain.js';
 
 const $ = s => document.querySelector(s);
 const ksh = n => 'Ksh ' + n.toLocaleString();
 const when = d => new Date(d).toLocaleString('en-KE', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
 const CATEGORY_LABELS = { bread: 'Bread', cake: 'Cakes', pastry: 'Pastries' };
 const bucketLabel = b => CATEGORY_LABELS[b] || b;
+const lineSummary = o => {
+  const sts = (o.lines || []).map(l => l.status || o.status);
+  const uniq = [...new Set(sts)];
+  return uniq.length <= 1 ? (uniq[0] || o.status) : o.lines.map(l => `${l.name}: ${l.status}`).join('<br>');
+};
 
 class CalendarPicker {
   constructor(scheduler, onPick) { Object.assign(this, { scheduler, onPick, day: null }); }
@@ -40,8 +44,7 @@ class App {
   constructor() {
     const clock = new Clock();
     this.cart = new Cart(); this.policy = policyFromRules(getRules()); this.scheduler = new Scheduler(clock);
-    this.cart = new Cart(); this.policy = defaultPolicy(); this.scheduler = new Scheduler(clock);
-    this.catalog = new LocalStorageProductRepository();
+    this.catalog = new LocalStorageProductRepository();   // products: staff Menu Management edits these (sold out, prices...)
     this.service = new OrderService(new LocalStorageOrderRepository(), this.scheduler, this.policy, clock);
     this.loadRules();
     this.picker = new CalendarPicker(this.scheduler, (bucket, d) => { this.form.whenByBucket[bucket] = d; this.show(this.currentView); });
@@ -95,7 +98,6 @@ class App {
       $('#view').innerHTML = `<div class="box"><b>Something went wrong showing this page.</b><p class="sub">${err.message}</p><button class="primary" data-v="menu">Back to menu</button></div>`;
     }
   }
-  findProduct(id) { return getCatalog().find(p => p.id === id); }
   findProduct(id) { return this.catalog.get(id); }
   dateButton(bucket, lead) {
     const picked = this.form.whenByBucket[bucket];
@@ -103,13 +105,13 @@ class App {
   }
 
   menu() {
-    return `<h2>Menu</h2><p class="sub">Pick a product to see sizes, flavours and allergens before you order.</p><div class="cards">${getCatalog().map(p => `<div class="card"><div class="emoji">${p.emoji}</div><b>${p.name}</b><div class="price">From ${ksh(p.fromPrice)}</div><small>${p.desc}</small><button class="primary" data-order="${p.id}">Order</button></div>`).join('')}</div>`;
     const cards = this.catalog.list().map(p => `<div class="card">${p.soldOut ? '<span class="soldout-badge">Sold out</span>' : ''}<div class="emoji">${p.emoji}</div><b>${p.name}</b><div class="price">From ${ksh(p.fromPrice)}</div><small>${p.desc}</small>${p.soldOut ? '<button class="ghost" disabled>Sold out</button>' : `<button class="primary" data-order="${p.id}">Order</button>`}</div>`).join('');
     return `<h2>Menu</h2><p class="sub">Pick a product to see sizes, flavours and allergens before you order.</p><div class="cards">${cards}</div>`;
   }
 
   openProduct(id) {
     const p = this.findProduct(id);
+    if (!p || p.soldOut) return this.show('menu');
     this.pending = p.custom
       ? { product: p, step: 'qty', qty: 1, units: null }
       : { product: p, size: p.sizes[0].id, flavour: p.flavours[0] || '', qty: 1 };
@@ -222,14 +224,13 @@ class App {
     const o = this.order;
     const deliveryNote = o.fulfilment === 'delivery'
       ? `<div class="note">An SMS has been sent to ${o.customer.phone} with a WhatsApp link to agree your delivery price with the bakery (simulated in this prototype).</div>` : '';
-    return `<div class="box receipt"><div class="emoji">✅</div><h2>Order confirmed</h2><div class="sub">An M-Pesa prompt is sent to ${o.customer.phone} (simulated in this prototype). Payment is required to confirm the order.</div><div class="serial">${o.serial}</div>${o.lines.map(l => `<div class="row"><span>${l.name} (${l.size}${l.flavour ? ', ' + l.flavour : ''})${l.message ? ' — “' + l.message + '”' : ''} ×${l.qty}</span><span>${ksh(l.qty * l.price)}</span></div>`).join('')}<div class="row total"><span>Total</span><span>${ksh(o.total)}</span></div>${Object.entries(o.pickups).map(([b, t]) => `<div class="row"><span>${bucketLabel(b)} — ${o.fulfilment === 'delivery' ? 'Delivery to ' + o.location : 'Pickup'}</span><span>${when(t)}</span></div>`).join('')}${deliveryNote}<p class="sub">Keep this serial number. Use it with your phone and email to find your order. To cancel, call us at least a day before pickup — note that we do not offer refunds.</p><button class="ghost" data-print>Print receipt</button> <button class="primary" data-v="menu">New order</button></div>`;
+    return `<div class="box receipt"><div class="emoji">✅</div><h2>Order confirmed</h2><div class="sub">An M-Pesa prompt is sent to ${o.customer.phone} (simulated in this prototype). Payment is required to confirm the order.</div><div class="serial">${o.serial}</div>${o.lines.map(l => `<div class="row"><span>${l.name} (${l.size}${l.flavour ? ', ' + l.flavour : ''})${l.message ? ' — “' + l.message + '”' : ''} ×${l.qty}</span><span>${ksh(l.qty * l.price)}</span></div>`).join('')}<div class="row total"><span>Total</span><span>${ksh(o.total)}</span></div>${Object.entries(o.pickups).map(([b, t]) => `<div class="row"><span>${bucketLabel(b)} — ${o.fulfilment === 'delivery' ? 'Delivery to ' + o.location : 'Pickup'}</span><span>${when(t)}</span></div>`).join('')}${deliveryNote}<p class="sub">Keep this serial number. Use it with your phone and email to find your order. You can request a cancellation from My Orders at least a day before pickup — note that we do not offer refunds.</p><button class="ghost" data-print>Print receipt</button> <button class="primary" data-v="menu">New order</button></div>`;
   }
 
   orders() {
     const l = this.lookup, found = l.lphone && l.lemail ? this.service.repo.find(l.lphone, l.lemail) : null;
     const canRequest = o => ['Received', 'Confirmed'].includes(o.status) && !o.cancelRequested;
-    const table = found && (found.length ? `<table><tr><th>Serial</th><th>Earliest</th><th>Total</th><th>Status</th><th></th></tr>${found.map(o => `<tr><td>${o.serial}</td><td>${when(o.when)}</td><td>${ksh(o.total)}</td><td>${o.status}${o.cancelRequested ? '<br><small>Cancellation requested</small>' : ''}</td><td>${canRequest(o) ? `<button class="ghost" data-cancel="${o.serial}">Request cancellation</button>` : ''}</td></tr>`).join('')}</table>` : '<p class="sub">No orders found for these details.</p>');
-    const table = found && (found.length ? `<table><tr><th>Serial</th><th>Earliest</th><th>Total</th><th>Status</th></tr>${found.map(o => `<tr><td>${o.serial}</td><td>${when(o.when)}</td><td>${ksh(o.total)}</td><td>${o.status}</td></tr>`).join('')}</table><p class="sub">To cancel an order, call us at least a day before pickup. We do not offer refunds.</p>` : '<p class="sub">No orders found for these details.</p>');
+    const table = found && (found.length ? `<table><tr><th>Serial</th><th>Earliest</th><th>Total</th><th>Status</th><th></th></tr>${found.map(o => `<tr><td>${o.serial}</td><td>${when(o.when)}</td><td>${ksh(o.total)}</td><td>${o.status === 'Cancelled' ? 'Cancelled' : lineSummary(o)}${o.cancelRequested ? '<br><small>Cancellation requested</small>' : ''}</td><td>${canRequest(o) ? `<button class="ghost" data-cancel="${o.serial}">Request cancellation</button>` : ''}</td></tr>`).join('')}</table><p class="sub">To cancel, send a request at least a day before pickup. The bakery will confirm it. We do not offer refunds.</p>` : '<p class="sub">No orders found for these details.</p>');
     return `<h2>My orders</h2><p class="sub">Enter the phone number and email you ordered with.</p><div class="box"><div class="two"><div><label>Phone</label><input name="lphone" value="${l.lphone || ''}"></div><div><label>Email</label><input name="lemail" value="${l.lemail || ''}"></div></div><p></p><button class="primary" data-find>Find my orders</button></div>${table ? `<div class="box">${table}</div>` : ''}`;
   }
 
@@ -255,8 +256,8 @@ class App {
     else if (d.place !== undefined) this.place();
     else if (d.find !== undefined) { this.lookup = { lphone: this.form.lphone, lemail: this.form.lemail }; this.show('orders'); }
     else if (d.cancel) {
-      // Cancellation is now a request: staff approve it from the staff app.
-      if (!confirm('Send a cancellation request to the bakery?')) return;
+      // Cancellation is a request: staff approve it from the staff app.
+      if (!confirm('Send a cancellation request to the bakery? Note that we do not offer refunds.')) return;
       try { this.service.requestCancel(d.cancel); } catch (x) { alert(x.message); }
       this.show('orders');
     }
