@@ -39,8 +39,8 @@ export const policyFromRules = rules => new LeadPolicy(Object.fromEntries(
 // ---- Catalog: products with sizes and flavours ----
 export class Size { constructor(id, label, price) { Object.assign(this, { id, label, price }); } }
 export class Product {
-  constructor({ id, name, category, emoji, desc, ingredients = [], allergens = [], sizes, flavours = [], custom = false }) {
-    Object.assign(this, { id, name, category, emoji, desc, ingredients, allergens, flavours, custom });
+  constructor({ id, name, category, emoji, desc, ingredients = [], allergens = [], sizes, flavours = [], custom = false, soldOut = false }) {
+    Object.assign(this, { id, name, category, emoji, desc, ingredients, allergens, flavours, custom, soldOut });
     this.sizes = sizes.map(s => s instanceof Size ? s : new Size(s.id, s.label, s.price));
   }
   get fromPrice() { return Math.min(...this.sizes.map(s => s.price)); }
@@ -49,6 +49,105 @@ export class Product {
 const toProducts = list => list.filter(p => p.available !== false).map(p => new Product(p));
 export const CATALOG = toProducts(DEFAULT_PRODUCTS);          // static copy, kept for tests
 export const getCatalog = () => toProducts(getProducts());    // live shared data, used by the app
+// Real Kelvinloaf Bakery menu and prices, from the stakeholder's two price-list photos
+// (Oct 3). Packet/pack quantities were not printed on the sheet for every item — where
+// we had to invent one (noted "placeholder qty" below), it's a guess to unblock the
+// prototype; the manager corrects these for real once Menu Management is built.
+export const CATALOG = [
+  new Product({ id: 'wb', name: 'White Bread', category: 'bread', emoji: '🍞',
+    desc: 'Soft daily-baked white loaf.', ingredients: ['Wheat flour', 'Yeast', 'Sugar', 'Salt', 'Milk'], allergens: ['Gluten', 'Milk'],
+    sizes: [{ id: '200g', label: '200g', price: 35 }, { id: '400g', label: '400g', price: 63 }, { id: '800g', label: '800g', price: 123 }] }),
+  new Product({ id: 'bb', name: 'Brown Bread', category: 'bread', emoji: '🍞',
+    desc: 'Wholemeal loaf, lightly sweetened.', ingredients: ['Wheat flour', 'Whole wheat', 'Yeast', 'Sugar', 'Salt'], allergens: ['Gluten'],
+    sizes: [{ id: '200g', label: '200g', price: 35 }, { id: '400g', label: '400g', price: 63 }, { id: '800g', label: '800g', price: 123 }] }),
+
+  // Standard cakes at Ksh 2200/kg. 2kg/3kg prices are our own linear estimate from the
+  // 1kg price (placeholder — the sheet only lists a per-kg figure).
+  new Product({ id: 'ck', name: 'Celebration Cake', category: 'cake', emoji: '🎂', custom: true,
+    desc: 'Iced to order, Ksh 2200/kg. Choose the size, flavour and message for each cake.',
+    ingredients: ['Wheat flour', 'Eggs', 'Butter', 'Sugar', 'Milk'], allergens: ['Gluten', 'Eggs', 'Milk'],
+    flavours: ['Mint chocolate', 'Red velvet', 'Chocolate', 'Carrot', 'Blueberry', 'Butterscotch', 'Bubblegum', 'Lemon', 'Cappuccino', 'Chocolate fudge', 'White forest', 'Banana', 'Marble', 'Black forest', 'Toffee', 'Pinacolada'],
+    sizes: [{ id: '1kg', label: '1 kg (8–10 people)', price: 2200 }, { id: '2kg', label: '2 kg (16–20 people)', price: 4400 }, { id: '3kg', label: '3 kg (24–30 people)', price: 6600 }] }),
+  new Product({ id: 'ckb', name: 'Everyday Cake', category: 'cake', emoji: '🎂', custom: true,
+    desc: 'Our lighter-priced cake line, Ksh 1800/kg.',
+    ingredients: ['Wheat flour', 'Eggs', 'Butter', 'Sugar', 'Milk'], allergens: ['Gluten', 'Eggs', 'Milk'],
+    flavours: ['Vanilla', 'Strawberry', 'Marble'],
+    sizes: [{ id: '1kg', label: '1 kg (8–10 people)', price: 1800 }, { id: '2kg', label: '2 kg (16–20 people)', price: 3600 }, { id: '3kg', label: '3 kg (24–30 people)', price: 5400 }] }),
+  new Product({ id: 'ckf', name: 'Fruit Cake', category: 'cake', emoji: '🎂', custom: true,
+    desc: 'Dense fruit cake, Ksh 2700/kg.',
+    ingredients: ['Wheat flour', 'Mixed dried fruit', 'Eggs', 'Butter', 'Sugar'], allergens: ['Gluten', 'Eggs', 'Milk'],
+    flavours: ['Classic'],
+    sizes: [{ id: '1kg', label: '1 kg (8–10 people)', price: 2700 }, { id: '2kg', label: '2 kg (16–20 people)', price: 5400 }, { id: '3kg', label: '3 kg (24–30 people)', price: 8100 }] }),
+  new Product({ id: 'ckc', name: 'Custom / Designer Cake', category: 'cake', emoji: '🎂', custom: true,
+    desc: 'Birthday, occasion or designer cakes — final price confirmed by the bakery. Placeholder starting price shown.',
+    ingredients: ['Wheat flour', 'Eggs', 'Butter', 'Sugar', 'Milk'], allergens: ['Gluten', 'Eggs', 'Milk'],
+    flavours: ['To discuss with bakery'],
+    sizes: [{ id: '1kg', label: '1 kg (starting price)', price: 3000 }] }),
+
+  new Product({ id: 'qc', name: 'Queen Cakes', category: 'pastry', emoji: '🧁',
+    desc: 'Small individual sponge cakes.', ingredients: ['Wheat flour', 'Eggs', 'Butter', 'Sugar'], allergens: ['Gluten', 'Eggs', 'Milk'],
+    sizes: [{ id: 'each', label: 'Each', price: 25 }, { id: 'packet', label: 'Packet of 9 (placeholder qty)', price: 225 }] }),
+  new Product({ id: 'scn', name: 'Scones', category: 'pastry', emoji: '🥐',
+    desc: 'Classic plain scones.', ingredients: ['Wheat flour', 'Butter', 'Milk', 'Sugar'], allergens: ['Gluten', 'Milk'],
+    sizes: [{ id: 'each', label: 'Each', price: 13 }, { id: 'packet', label: 'Packet of 20 (placeholder qty)', price: 260 }] }),
+  new Product({ id: 'rgb', name: 'Ring Buns', category: 'pastry', emoji: '🥯',
+    desc: 'Ring-shaped sweet buns.', ingredients: ['Wheat flour', 'Yeast', 'Sugar', 'Butter'], allergens: ['Gluten', 'Milk'],
+    sizes: [{ id: 'each', label: 'Each', price: 8 }, { id: 'packet', label: 'Packet of 12 (placeholder qty)', price: 95 }] }),
+  new Product({ id: 'rdb', name: 'Round Buns', category: 'pastry', emoji: '🥯',
+    desc: 'Soft round buns.', ingredients: ['Wheat flour', 'Yeast', 'Sugar', 'Butter'], allergens: ['Gluten', 'Milk'],
+    sizes: [{ id: 'each', label: 'Each', price: 15 }, { id: 'packet', label: 'Packet of 6 (placeholder qty)', price: 90 }] }),
+  new Product({ id: 'lr', name: 'Long Rolls', category: 'pastry', emoji: '🥖',
+    desc: 'Long bread rolls.', ingredients: ['Wheat flour', 'Yeast', 'Salt'], allergens: ['Gluten'],
+    sizes: [{ id: 'each', label: 'Each', price: 15 }] }),
+  new Product({ id: 'dn', name: 'Doughnuts', category: 'pastry', emoji: '🍩',
+    desc: 'Classic sugared doughnuts.', ingredients: ['Wheat flour', 'Sugar', 'Eggs', 'Oil'], allergens: ['Gluten', 'Eggs'],
+    sizes: [{ id: 'each', label: 'Each', price: 15 }, { id: 'packet', label: 'Packet of 6 (placeholder qty)', price: 90 }] }),
+  new Product({ id: 'mad', name: 'Madeira Cake', category: 'pastry', emoji: '🍰',
+    desc: 'Classic dense Madeira loaf cake.', ingredients: ['Wheat flour', 'Eggs', 'Butter', 'Sugar'], allergens: ['Gluten', 'Eggs', 'Milk'],
+    sizes: [{ id: '470g', label: '470g', price: 130 }, { id: '1kg', label: '1kg', price: 270 }] }),
+  new Product({ id: 'tsc', name: 'Tea Scones', category: 'pastry', emoji: '🥐',
+    desc: 'Scones sized for tea time.', ingredients: ['Wheat flour', 'Butter', 'Milk', 'Sugar'], allergens: ['Gluten', 'Milk'],
+    sizes: [{ id: 'each', label: 'Each', price: 35 }, { id: 'packet', label: 'Packet of 6 (placeholder qty)', price: 225 }] }),
+  new Product({ id: 'crs', name: 'Croissants', category: 'pastry', emoji: '🥐',
+    desc: 'Buttery, flaky croissants.', ingredients: ['Wheat flour', 'Butter', 'Yeast'], allergens: ['Gluten', 'Milk'],
+    sizes: [{ id: 'each', label: 'Each', price: 50 }] }),
+  new Product({ id: 'sr', name: 'Sausage Rolls', category: 'pastry', emoji: '🌭',
+    desc: 'Savoury sausage-filled pastry.', ingredients: ['Wheat flour', 'Sausage meat', 'Butter'], allergens: ['Gluten'],
+    sizes: [{ id: 'each', label: 'Each', price: 55 }] }),
+  new Product({ id: 'ckie', name: 'Cookies', category: 'pastry', emoji: '🍪',
+    desc: 'Classic baked cookies.', ingredients: ['Wheat flour', 'Butter', 'Sugar', 'Eggs'], allergens: ['Gluten', 'Eggs', 'Milk'],
+    sizes: [{ id: 'each', label: 'Each', price: 20 }, { id: 'packet', label: 'Packet of 10 (placeholder qty)', price: 200 }] }),
+  new Product({ id: 'dan', name: 'Danish Pastries', category: 'pastry', emoji: '🥐',
+    desc: 'Flaky Danish pastry.', ingredients: ['Wheat flour', 'Butter', 'Sugar'], allergens: ['Gluten', 'Milk'],
+    sizes: [{ id: 'each', label: 'Each', price: 55 }] }),
+];
+
+// ---- Product repository: the editable, persisted catalog ----
+// CATALOG above is the seed data only. Every screen (customer menu, staff Menu
+// Management) reads through this repository instead, so a manager's edits
+// actually stick and the customer site picks them up on next load.
+export class ProductRepository {
+  constructor() { this.db = CATALOG.map(p => ProductRepository.toPlain(p)); }
+  static toPlain(p) { return { id: p.id, name: p.name, category: p.category, emoji: p.emoji, desc: p.desc, ingredients: [...p.ingredients], allergens: [...p.allergens], flavours: [...p.flavours], custom: p.custom, soldOut: p.soldOut, sizes: p.sizes.map(s => ({ id: s.id, label: s.label, price: s.price })) }; }
+  load() { return this.db; }
+  persist(db) { this.db = db; }
+  list() { return this.load().map(p => new Product(p)); }
+  get(id) { const p = this.load().find(p => p.id === id); return p ? new Product(p) : undefined; }
+  save(product) {
+    const plain = product instanceof Product ? ProductRepository.toPlain(product) : product;
+    const db = this.load(), i = db.findIndex(p => p.id === plain.id);
+    if (i >= 0) db[i] = plain; else db.push(plain);
+    this.persist(db);
+  }
+  remove(id) { this.persist(this.load().filter(p => p.id !== id)); }
+  setSoldOut(id, soldOut) { const db = this.load(), p = db.find(p => p.id === id); if (p) { p.soldOut = soldOut; this.persist(db); } }
+}
+export class LocalStorageProductRepository extends ProductRepository {
+  constructor() { super(); this._ensureSeeded(); }
+  load() { return JSON.parse(localStorage.getItem('kch-catalog') || 'null') || this.db; }
+  persist(db) { this.db = db; localStorage.setItem('kch-catalog', JSON.stringify(db)); }
+  _ensureSeeded() { if (!localStorage.getItem('kch-catalog')) this.persist(this.db); }
+}
 
 // ---- Cart: one shared cart across products, like an Uber-style checkout ----
 export class Cart {
@@ -145,6 +244,24 @@ export class OrderRepository {
   }
   nextSeq(key) { const db = this.load(); db.seq[key] = (db.seq[key] || 0) + 1; this.persist(db); return db.seq[key]; }
   get(serial) { return this.load().orders.find(o => o.serial === serial); }
+  // Each line (one cake, one bread order, etc.) progresses through its own status
+  // independently — the whole order is only marked Collected once every line is.
+  updateLineStatus(serial, lineId, status) {
+    const db = this.load(), order = db.orders.find(o => o.serial === serial);
+    if (!order) return;
+    const line = order.lines.find(l => l.id === lineId);
+    if (!line) return;
+    line.status = status;
+    if (order.lines.every(l => l.status === 'Collected')) order.status = 'Collected';
+    this.persist(db);
+  }
+  cancelOrder(serial) {
+    const db = this.load(), order = db.orders.find(o => o.serial === serial);
+    if (!order) return;
+    order.status = 'Cancelled';
+    order.lines.forEach(l => { l.status = 'Cancelled'; });
+    this.persist(db);
+  }
   find(phone, email) {
     const p = Customer.normalizePhone(phone), e = email.trim().toLowerCase();
     return this.load().orders.filter(o => o.customer.phone === p && o.customer.email === e);
@@ -161,7 +278,8 @@ export class ValidationError extends Error {
   constructor(list) { super(list.join('; ')); this.list = list; }
 }
 export class OrderService {
-  static DELIVERY_FEE = 100;
+  // Delivery no longer has a flat fee: the manager contacts the customer after
+  // the order is placed to agree a delivery price by phone/WhatsApp.
   static CANCEL_HOURS = 24;
   constructor(repo, scheduler, policy, clock) { Object.assign(this, { repo, scheduler, policy, clock }); }
 
@@ -179,7 +297,7 @@ export class OrderService {
     const now = this.clock.now(), p = n => String(n).padStart(2, '0');
     const key = `${now.getFullYear()}${p(now.getMonth() + 1)}${p(now.getDate())}`;
     const serial = `KBK-${key}-${String(this.repo.nextSeq(key)).padStart(4, '0')}`;
-    const fee = fulfilment === 'delivery' ? OrderService.DELIVERY_FEE : 0;
+    const fee = 0; // delivery price is agreed by phone/WhatsApp after ordering, not charged here
     const pickups = Object.fromEntries(buckets.map(b => [b, whenByBucket[b].toISOString()]));
     const earliest = buckets.map(b => whenByBucket[b]).sort((a, b) => a - b)[0];
     const order = {
@@ -187,6 +305,11 @@ export class OrderService {
       customer: { name: customer.name, phone: customer.phone, email: customer.email },
       lines: cart.lines.map(l => ({ name: l.product.name, size: l.size.label, flavour: l.flavour || null, message: l.message || null, qty: l.qty, price: l.size.price, bucket: cart.bucketOf(l) })),
       pickups, when: earliest.toISOString(), createdAt: now.toISOString(), updatedAt: now.toISOString(),
+      lines: cart.lines.map((l, i) => ({
+        id: `${serial}-L${i + 1}`, name: l.product.name, size: l.size.label, flavour: l.flavour || null,
+        message: l.message || null, qty: l.qty, price: l.size.price, bucket: cart.bucketOf(l), status: 'Received',
+      })),
+      pickups, when: earliest.toISOString(), createdAt: now.toISOString(),
     };
     this.repo.add(order);
     cart.clear();

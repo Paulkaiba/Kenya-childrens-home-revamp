@@ -9,3 +9,8 @@
 .status-Cancelled{background:#f8d7da;color:#a71d2a}
 .table-wrap{overflow-x:auto}
 table{min-width:720px}
+.product-row-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.product-row button, .product-form button{margin-top:6px}
+.product-form textarea{font-family:inherit}
+.item-row{display:flex;justify-content:space-between;align-items:center;width:100%;background:none;border:0;border-top:1px solid var(--line);padding:10px 2px;text-align:left;font:inherit;cursor:pointer}
+.item-row:hover{background:var(--bg)}
