@@ -8,6 +8,11 @@ const ksh = n => 'Ksh ' + n.toLocaleString();
 const when = d => new Date(d).toLocaleString('en-KE', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
 const CATEGORY_LABELS = { bread: 'Bread', cake: 'Cakes', pastry: 'Pastries' };
 const bucketLabel = b => CATEGORY_LABELS[b] || b;
+const lineSummary = o => {
+  const sts = (o.lines || []).map(l => l.status || o.status);
+  const uniq = [...new Set(sts)];
+  return uniq.length <= 1 ? (uniq[0] || o.status) : o.lines.map(l => `${l.name}: ${l.status}`).join('<br>');
+};
 
 class CalendarPicker {
   constructor(scheduler, onPick) { Object.assign(this, { scheduler, onPick, day: null }); }
@@ -225,7 +230,7 @@ class App {
   orders() {
     const l = this.lookup, found = l.lphone && l.lemail ? this.service.repo.find(l.lphone, l.lemail) : null;
     const canRequest = o => ['Received', 'Confirmed'].includes(o.status) && !o.cancelRequested;
-    const table = found && (found.length ? `<table><tr><th>Serial</th><th>Earliest</th><th>Total</th><th>Status</th><th></th></tr>${found.map(o => `<tr><td>${o.serial}</td><td>${when(o.when)}</td><td>${ksh(o.total)}</td><td>${o.status}${o.cancelRequested ? '<br><small>Cancellation requested</small>' : ''}</td><td>${canRequest(o) ? `<button class="ghost" data-cancel="${o.serial}">Request cancellation</button>` : ''}</td></tr>`).join('')}</table><p class="sub">To cancel, send a request at least a day before pickup. The bakery will confirm it. We do not offer refunds.</p>` : '<p class="sub">No orders found for these details.</p>');
+    const table = found && (found.length ? `<table><tr><th>Serial</th><th>Earliest</th><th>Total</th><th>Status</th><th></th></tr>${found.map(o => `<tr><td>${o.serial}</td><td>${when(o.when)}</td><td>${ksh(o.total)}</td><td>${o.status === 'Cancelled' ? 'Cancelled' : lineSummary(o)}${o.cancelRequested ? '<br><small>Cancellation requested</small>' : ''}</td><td>${canRequest(o) ? `<button class="ghost" data-cancel="${o.serial}">Request cancellation</button>` : ''}</td></tr>`).join('')}</table><p class="sub">To cancel, send a request at least a day before pickup. The bakery will confirm it. We do not offer refunds.</p>` : '<p class="sub">No orders found for these details.</p>');
     return `<h2>My orders</h2><p class="sub">Enter the phone number and email you ordered with.</p><div class="box"><div class="two"><div><label>Phone</label><input name="lphone" value="${l.lphone || ''}"></div><div><label>Email</label><input name="lemail" value="${l.lemail || ''}"></div></div><p></p><button class="primary" data-find>Find my orders</button></div>${table ? `<div class="box">${table}</div>` : ''}`;
   }
 
