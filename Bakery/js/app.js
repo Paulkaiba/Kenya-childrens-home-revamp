@@ -1,3 +1,7 @@
+import { getCatalog, policyFromRules, Cart, Customer, Scheduler, Clock, OrderService, LocalStorageOrderRepository, ValidationError } from './domain.js';
+import { initStore, getRules, isDayFull, onDataChange } from '../../shared/store.js';
+
+initStore();
 import { Cart, Customer, defaultPolicy, Scheduler, Clock, OrderService, LocalStorageOrderRepository, LocalStorageProductRepository, ValidationError } from './domain.js';
 
 const $ = s => document.querySelector(s);
@@ -35,9 +39,11 @@ class CalendarPicker {
 class App {
   constructor() {
     const clock = new Clock();
+    this.cart = new Cart(); this.policy = policyFromRules(getRules()); this.scheduler = new Scheduler(clock);
     this.cart = new Cart(); this.policy = defaultPolicy(); this.scheduler = new Scheduler(clock);
     this.catalog = new LocalStorageProductRepository();
     this.service = new OrderService(new LocalStorageOrderRepository(), this.scheduler, this.policy, clock);
+    this.loadRules();
     this.picker = new CalendarPicker(this.scheduler, (bucket, d) => { this.form.whenByBucket[bucket] = d; this.show(this.currentView); });
     this.form = { fulfilment: 'pickup', whenByBucket: {} }; this.lookup = {}; this.pending = null;
     // View names are resolved through this map (not this[v]()) so they never collide
@@ -54,8 +60,26 @@ class App {
       if (e.target.name === 'size' || e.target.name === 'flavour') { this.pending[e.target.name] = e.target.value; this.show('product'); }
     });
     $('#modal-body').addEventListener('click', e => this.picker.click(e));
+    // Live updates: when staff change an order, product or rule in another tab.
+    onDataChange(() => {
+      this.loadRules();
+      if (!$('#modal').hidden) this.picker.render();
+      else if (['menu', 'orders'].includes(this.currentView)) this.show(this.currentView);
+    });
     this.show('menu');
   }
+
+  // Pull the latest opening hours, closed dates, lead times and capacity from the shared store.
+  loadRules() {
+    const r = getRules();
+    this.policy = policyFromRules(r);
+    this.service.policy = this.policy;
+    Object.assign(this.scheduler, {
+      open: r.hours.open, close: r.hours.close, closedDays: r.hours.closedDays,
+      closedDates: r.closedDates, isFull: d => isDayFull(d),
+    });
+  }
+
   // Cart badge always reflects true state first; rendering errors then show a
   // recoverable message instead of silently leaving the old screen in place.
   show(v) {
@@ -71,6 +95,7 @@ class App {
       $('#view').innerHTML = `<div class="box"><b>Something went wrong showing this page.</b><p class="sub">${err.message}</p><button class="primary" data-v="menu">Back to menu</button></div>`;
     }
   }
+  findProduct(id) { return getCatalog().find(p => p.id === id); }
   findProduct(id) { return this.catalog.get(id); }
   dateButton(bucket, lead) {
     const picked = this.form.whenByBucket[bucket];
@@ -78,6 +103,7 @@ class App {
   }
 
   menu() {
+    return `<h2>Menu</h2><p class="sub">Pick a product to see sizes, flavours and allergens before you order.</p><div class="cards">${getCatalog().map(p => `<div class="card"><div class="emoji">${p.emoji}</div><b>${p.name}</b><div class="price">From ${ksh(p.fromPrice)}</div><small>${p.desc}</small><button class="primary" data-order="${p.id}">Order</button></div>`).join('')}</div>`;
     const cards = this.catalog.list().map(p => `<div class="card">${p.soldOut ? '<span class="soldout-badge">Sold out</span>' : ''}<div class="emoji">${p.emoji}</div><b>${p.name}</b><div class="price">From ${ksh(p.fromPrice)}</div><small>${p.desc}</small>${p.soldOut ? '<button class="ghost" disabled>Sold out</button>' : `<button class="primary" data-order="${p.id}">Order</button>`}</div>`).join('');
     return `<h2>Menu</h2><p class="sub">Pick a product to see sizes, flavours and allergens before you order.</p><div class="cards">${cards}</div>`;
   }
@@ -201,6 +227,8 @@ class App {
 
   orders() {
     const l = this.lookup, found = l.lphone && l.lemail ? this.service.repo.find(l.lphone, l.lemail) : null;
+    const canRequest = o => ['Received', 'Confirmed'].includes(o.status) && !o.cancelRequested;
+    const table = found && (found.length ? `<table><tr><th>Serial</th><th>Earliest</th><th>Total</th><th>Status</th><th></th></tr>${found.map(o => `<tr><td>${o.serial}</td><td>${when(o.when)}</td><td>${ksh(o.total)}</td><td>${o.status}${o.cancelRequested ? '<br><small>Cancellation requested</small>' : ''}</td><td>${canRequest(o) ? `<button class="ghost" data-cancel="${o.serial}">Request cancellation</button>` : ''}</td></tr>`).join('')}</table>` : '<p class="sub">No orders found for these details.</p>');
     const table = found && (found.length ? `<table><tr><th>Serial</th><th>Earliest</th><th>Total</th><th>Status</th></tr>${found.map(o => `<tr><td>${o.serial}</td><td>${when(o.when)}</td><td>${ksh(o.total)}</td><td>${o.status}</td></tr>`).join('')}</table><p class="sub">To cancel an order, call us at least a day before pickup. We do not offer refunds.</p>` : '<p class="sub">No orders found for these details.</p>');
     return `<h2>My orders</h2><p class="sub">Enter the phone number and email you ordered with.</p><div class="box"><div class="two"><div><label>Phone</label><input name="lphone" value="${l.lphone || ''}"></div><div><label>Email</label><input name="lemail" value="${l.lemail || ''}"></div></div><p></p><button class="primary" data-find>Find my orders</button></div>${table ? `<div class="box">${table}</div>` : ''}`;
   }
@@ -226,6 +254,12 @@ class App {
     }
     else if (d.place !== undefined) this.place();
     else if (d.find !== undefined) { this.lookup = { lphone: this.form.lphone, lemail: this.form.lemail }; this.show('orders'); }
+    else if (d.cancel) {
+      // Cancellation is now a request: staff approve it from the staff app.
+      if (!confirm('Send a cancellation request to the bakery?')) return;
+      try { this.service.requestCancel(d.cancel); } catch (x) { alert(x.message); }
+      this.show('orders');
+    }
     else if (d.print !== undefined) window.print();
     else if (d.close !== undefined) this.picker.close();
   }

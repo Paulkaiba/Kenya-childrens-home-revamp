@@ -1,4 +1,8 @@
 // Pure domain logic: no DOM access, so every class can be unit-tested in Node.
+// Data (products, rules, orders) now lives in ../../shared/store.js so the
+// customer app and the staff app read and write the same thing.
+import { DEFAULT_PRODUCTS, getProducts, loadDb, saveDb, localYmd } from '../../shared/store.js';
+
 const H = 36e5;
 
 export class Clock { now() { return new Date(); } }
@@ -21,14 +25,18 @@ export class LeadPolicy {
   constructor(rules) { this.rules = rules; }
   hoursFor(category, qty) { return (this.rules[category] || new LeadRule()).hours(qty); }
 }
-// Edit these numbers to change ordering rules.
+// Fallback numbers (kept for tests). The app itself builds its policy from the
+// shared rules via policyFromRules(getRules()).
 export const defaultPolicy = () => new LeadPolicy({
   bread: new TieredLead([{ over: 25, hours: 24 }, { over: 50, hours: 48 }]),
   cake: new TieredLead([{ over: 2, hours: 48 }, { over: 0, hours: 24 }]),
   pastry: new TieredLead([{ over: 5, hours: 24 }, { over: 10, hours: 48 }]),
 });
+// Build a LeadPolicy from the shared rules object: { bread: [{over, hours}], ... }
+export const policyFromRules = rules => new LeadPolicy(Object.fromEntries(
+  Object.entries(rules.lead).map(([cat, tiers]) => [cat, new TieredLead(tiers)])));
 
-// ---- Catalog: products with sizes and flavours (placeholder prices/options for now) ----
+// ---- Catalog: products with sizes and flavours ----
 export class Size { constructor(id, label, price) { Object.assign(this, { id, label, price }); } }
 export class Product {
   constructor({ id, name, category, emoji, desc, ingredients = [], allergens = [], sizes, flavours = [], custom = false, soldOut = false }) {
@@ -38,6 +46,9 @@ export class Product {
   get fromPrice() { return Math.min(...this.sizes.map(s => s.price)); }
   size(id) { return this.sizes.find(s => s.id === id) || this.sizes[0]; }
 }
+const toProducts = list => list.filter(p => p.available !== false).map(p => new Product(p));
+export const CATALOG = toProducts(DEFAULT_PRODUCTS);          // static copy, kept for tests
+export const getCatalog = () => toProducts(getProducts());    // live shared data, used by the app
 // Real Kelvinloaf Bakery menu and prices, from the stakeholder's two price-list photos
 // (Oct 3). Packet/pack quantities were not printed on the sheet for every item — where
 // we had to invent one (noted "placeholder qty" below), it's a guess to unblock the
@@ -152,8 +163,6 @@ export class Cart {
   get count() { return this.lines.reduce((n, l) => n + l.qty, 0); }
   get subtotal() { return this.lines.reduce((s, l) => s + l.qty * l.size.price, 0); }
   get isEmpty() { return !this.items.size; }
-  // Cakes and everything else are scheduled independently, so a big cake order
-  // doesn't force bread or pastries in the same cart onto a later date.
   // Every category (bread, cake, pastry, ...) is scheduled independently, so a big
   // order in one category never forces another category onto a later date.
   bucketOf(l) { return l.product.category; }
@@ -168,9 +177,10 @@ export class Cart {
 }
 
 // ---- Scheduling ----
+// closedDates: ['YYYY-MM-DD'] extra days off. isFull(day): returns true when the day is at capacity.
 export class Scheduler {
-  constructor(clock, { open = 8, close = 18, closedDays = [0], minPrep = 2, lateCutoffHour = 17, lateFloorHour = 15 } = {}) {
-    Object.assign(this, { clock, open, close, closedDays, minPrep, lateCutoffHour, lateFloorHour });
+  constructor(clock, { open = 8, close = 18, closedDays = [0], closedDates = [], isFull = () => false, minPrep = 2, lateCutoffHour = 17, lateFloorHour = 15 } = {}) {
+    Object.assign(this, { clock, open, close, closedDays, closedDates, isFull, minPrep, lateCutoffHour, lateFloorHour });
   }
   earliest(lead) {
     const now = this.clock.now();
@@ -189,7 +199,7 @@ export class Scheduler {
     return t;
   }
   slots(day, lead) {
-    if (this.closedDays.includes(day.getDay())) return [];
+    if (this.closedDays.includes(day.getDay()) || this.closedDates.includes(localYmd(day)) || this.isFull(day)) return [];
     const min = this.earliest(lead), out = [];
     for (let h = this.open; h < this.close; h++) {
       const t = new Date(day.getFullYear(), day.getMonth(), day.getDate(), h);
@@ -229,7 +239,7 @@ export class OrderRepository {
   add(order) { const db = this.load(); db.orders.push(order); this.persist(db); }
   update(serial, patch) {
     const db = this.load();
-    Object.assign(db.orders.find(o => o.serial === serial), patch);
+    Object.assign(db.orders.find(o => o.serial === serial), patch, { updatedAt: new Date().toISOString() });
     this.persist(db);
   }
   nextSeq(key) { const db = this.load(); db.seq[key] = (db.seq[key] || 0) + 1; this.persist(db); return db.seq[key]; }
@@ -257,9 +267,10 @@ export class OrderRepository {
     return this.load().orders.filter(o => o.customer.phone === p && o.customer.email === e);
   }
 }
+// Same localStorage key as before ('kch-bakery'), now accessed through the shared store.
 export class LocalStorageOrderRepository extends OrderRepository {
-  load() { return JSON.parse(localStorage.getItem('kch-bakery') || '{"orders":[],"seq":{}}'); }
-  persist(db) { localStorage.setItem('kch-bakery', JSON.stringify(db)); }
+  load() { return loadDb(); }
+  persist(db) { saveDb(db); }
 }
 
 // ---- Orders ----
@@ -290,8 +301,10 @@ export class OrderService {
     const pickups = Object.fromEntries(buckets.map(b => [b, whenByBucket[b].toISOString()]));
     const earliest = buckets.map(b => whenByBucket[b]).sort((a, b) => a - b)[0];
     const order = {
-      serial, fulfilment, location, fee, notes, status: 'Received', total: cart.subtotal + fee,
+      serial, fulfilment, location, fee, notes, status: 'Received', cancelRequested: false, total: cart.subtotal + fee,
       customer: { name: customer.name, phone: customer.phone, email: customer.email },
+      lines: cart.lines.map(l => ({ name: l.product.name, size: l.size.label, flavour: l.flavour || null, message: l.message || null, qty: l.qty, price: l.size.price, bucket: cart.bucketOf(l) })),
+      pickups, when: earliest.toISOString(), createdAt: now.toISOString(), updatedAt: now.toISOString(),
       lines: cart.lines.map((l, i) => ({
         id: `${serial}-L${i + 1}`, name: l.product.name, size: l.size.label, flavour: l.flavour || null,
         message: l.message || null, qty: l.qty, price: l.size.price, bucket: cart.bucketOf(l), status: 'Received',
@@ -303,11 +316,23 @@ export class OrderService {
     return order;
   }
 
+  // Instant cancel (kept for tests / staff use). The customer app now uses requestCancel().
   cancel(serial) {
     const o = this.repo.get(serial);
     if (!o || o.status !== 'Received') throw new ValidationError(['This order cannot be cancelled']);
     if (new Date(o.when) - this.clock.now() < OrderService.CANCEL_HOURS * H)
       throw new ValidationError(['Orders can only be cancelled 24 hours before pickup']);
     this.repo.update(serial, { status: 'Cancelled' });
+  }
+
+  // Customer-side cancellation is a REQUEST: the status does not change.
+  // Staff approve it with updateOrder(serial, { status: 'Cancelled' }) in the staff app.
+  requestCancel(serial) {
+    const o = this.repo.get(serial);
+    if (!o || !['Received', 'Confirmed'].includes(o.status) || o.cancelRequested)
+      throw new ValidationError(['This order cannot be cancelled']);
+    if (new Date(o.when) - this.clock.now() < OrderService.CANCEL_HOURS * H)
+      throw new ValidationError(['Orders can only be cancelled 24 hours before pickup']);
+    this.repo.update(serial, { cancelRequested: true });
   }
 }

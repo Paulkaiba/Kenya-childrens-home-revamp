@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kelvin Loaf Bakery | Kenya Children's Homes</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  /* Same brand tokens as Styles/Bakery/bakery.css, so the demo and the ordering app match. */
+  :root{
+    --kch-primary:#E31E24;
+    --kch-primary-dark:#C4181E;
+    --kch-heading:#0F172A;
+    --kch-text:#475569;
+    --kch-accent:#64748B;
+    --kch-bg:#FFFFFF;
+    --kch-soft:#F8FAFC;
+    --kch-line:#E5E7EB;
+    --kch-tint:#FEF2F2;          /* pale red panel used for the quote and contact boxes */
+    --kch-tint-line:#FECACA;
+    --radius:8px;
+    --font-main:'Inter',system-ui,-apple-system,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{font-family:var(--font-main);background:var(--kch-bg);color:var(--kch-text);font-size:16px;line-height:1.6}
+  a{color:inherit}
+
+  /* ---- Top bar ---- */
+  .topbar{background:#fff;border-bottom:1px solid var(--kch-line);position:sticky;top:0;z-index:10}
+  .topbar .in{max-width:1000px;margin:auto;padding:10px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:var(--kch-heading);font-weight:700;font-size:17px}
+  .brand img{height:42px;width:auto}
+
+  /* ---- Buttons ---- */
+  .btn{display:inline-block;border-radius:var(--radius);padding:12px 22px;font-weight:600;text-decoration:none;border:2px solid var(--kch-primary);background:var(--kch-primary);color:#fff;transition:background .2s ease,color .2s ease}
+  .btn:hover{background:var(--kch-primary-dark);border-color:var(--kch-primary-dark)}
+  .btn.outline{background:transparent;color:var(--kch-primary)}
+  .btn.outline:hover{background:var(--kch-tint)}
+  .btn.light{background:#fff;color:var(--kch-primary);border-color:#fff}
+  .btn.light:hover{background:#f3f4f6;border-color:#f3f4f6}
+  .btn.ghost-light{background:transparent;color:#fff;border-color:#fff}
+  .btn.ghost-light:hover{background:#ffffff26}
+  .btn.whatsapp{background:#25D366;border-color:#25D366;color:#fff;padding:9px 16px;font-size:14px}
+  .btn.whatsapp:hover{background:#1EBE5A;border-color:#1EBE5A}
+
+  /* ---- Hero ---- */
+  .hero{background:linear-gradient(135deg,#C4181E 0%,#E31E24 55%,#EF4444 100%);color:#fff;text-align:center;padding:72px 20px}
+  .hero h1{font-size:clamp(32px,6vw,52px);line-height:1.15;font-weight:700;margin-bottom:12px}
+  .hero p{font-size:clamp(16px,2.4vw,20px);max-width:640px;margin:0 auto 28px;opacity:.95}
+  .hero .actions{display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
+
+  /* ---- Sections ---- */
+  .wrap{max-width:1000px;margin:auto;padding:0 20px}
+  section{padding:48px 0 0}
+  h2{color:var(--kch-heading);font-size:30px;line-height:1.2;margin-bottom:14px}
+  .lead p{margin-bottom:14px;max-width:760px}
+  .eyebrow{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--kch-accent);font-weight:600;margin-bottom:12px}
+
+  /* ---- Quote card ---- */
+  .quote{background:var(--kch-tint);border:1px solid var(--kch-tint-line);border-radius:12px;padding:26px 28px;margin-top:8px}
+  .quote blockquote{font-style:italic;color:var(--kch-text);font-size:17px}
+  .quote cite{display:block;text-align:right;font-style:normal;font-size:13px;color:var(--kch-accent);margin-top:12px}
+
+  /* ---- Product photos ---- */
+  .photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px}
+  .photo{position:relative;aspect-ratio:1/1;border-radius:12px;overflow:hidden;background:linear-gradient(135deg,#FDE9D2,#F6C99A);display:flex;align-items:center;justify-content:center;font-size:56px}
+  .photo img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+
+  /* ---- Contact box ---- */
+  .contact{background:var(--kch-tint);border:1px solid var(--kch-tint-line);border-radius:12px;padding:24px 28px}
+  .contact .num{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 0;border-top:1px solid var(--kch-tint-line)}
+  .contact .num:first-of-type{border-top:0}
+  .contact .num a.tel{color:var(--kch-heading);font-weight:600;font-size:18px;text-decoration:none}
+  .contact .addr{margin-top:6px;padding-top:14px;border-top:1px solid var(--kch-tint-line);font-size:14px;color:var(--kch-text)}
+
+  /* ---- Order banner and footer ---- */
+  .order-banner{margin-top:48px;background:var(--kch-heading);color:#fff;border-radius:12px;padding:32px 28px;text-align:center}
+  .order-banner h2{color:#fff;margin-bottom:8px}
+  .order-banner p{opacity:.85;margin-bottom:20px}
+  footer{margin-top:48px;border-top:1px solid var(--kch-line);padding:22px 20px;text-align:center;font-size:13px;color:var(--kch-accent)}
+
+  @media(max-width:560px){
+    .topbar .btn{padding:9px 14px;font-size:14px}
+    .brand span{display:none}
+    .hero{padding:52px 20px}
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="in">
+    <a class="brand" href="#top"><img src="../assets/logo.png" alt="Kenya Children's Homes logo" onerror="this.remove()"><span>Kenya Children's Homes</span></a>
+    <a class="btn" href="../Bakery/index.html">Order Online</a>
+  </div>
+</header>
+
+<div id="top" class="hero">
+  <h1>Kelvin Loaf Bakery</h1>
+  <p>Freshly baked bread and more, made to support the children of Kenya Children's Homes.</p>
+  <div class="actions">
+    <a class="btn light" href="../Bakery/index.html">Order Online</a>
+    <a class="btn ghost-light" href="#contact">Contact Us</a>
+  </div>
+</div>
+
+<main class="wrap">
+
+  <section class="lead">
+    <h2>About the Bakery</h2>
+    <p>Kelvin Loaf Bakery is an income-generating project for Kenya Children's Homes (KCH) that produces bread and a variety of other baked products.</p>
+    <p>The bakery supplies bread to KCH programs and also makes products such as scones, cookies, cakes, and mandazis to help reduce costs and support sustainability.</p>
+  </section>
+
+  <section>
+    <div class="quote">
+      <blockquote>“My social responsibility in society is achieved in working with others to help the children. I want to ensure that my work is productive to enhance the running of the home and make the children happy and comfortable.”</blockquote>
+      <cite>— Bakery Supervisor</cite>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow">Products</div>
+    <!-- Save the six bakery photos from kch.co.ke as assets/bakery/1.jpg ... 6.jpg.
+         Until they exist, each tile shows a placeholder emoji. -->
+    <div class="photos">
+      <div class="photo">🍞<img src="../assets/bakery/1.jpg" alt="Freshly baked bread" onerror="this.remove()"></div>
+      <div class="photo">🥖<img src="../assets/bakery/2.jpg" alt="Bread packed in crates" onerror="this.remove()"></div>
+      <div class="photo">🥐<img src="../assets/bakery/3.jpg" alt="Bread ready for delivery" onerror="this.remove()"></div>
+      <div class="photo">🍞<img src="../assets/bakery/4.jpg" alt="Bread crates outside the bakery" onerror="this.remove()"></div>
+      <div class="photo">🧁<img src="../assets/bakery/5.jpg" alt="Baked goods on the grounds" onerror="this.remove()"></div>
+      <div class="photo">🍪<img src="../assets/bakery/6.jpg" alt="Wrapped loaves" onerror="this.remove()"></div>
+    </div>
+  </section>
+
+  <section id="contact">
+    <div class="contact">
+      <div class="eyebrow">Contact</div>
+      <div class="num">
+        <a class="tel" href="tel:+254724352262">+254 724 352262</a>
+        <a class="btn whatsapp" href="https://wa.me/254724352262" target="_blank" rel="noopener">WhatsApp</a>
+      </div>
+      <div class="num">
+        <a class="tel" href="tel:+254748815627">0748 815627</a>
+        <a class="btn whatsapp" href="https://wa.me/254748815627" target="_blank" rel="noopener">WhatsApp</a>
+      </div>
+      <div class="addr">Thomas Barnado House, along Lang'ata Road, Nairobi</div>
+    </div>
+  </section>
+
+  <div class="order-banner">
+    <h2>Ready to order?</h2>
+    <p>Choose your bread, cakes and pastries, pick a date and time, and we will have it ready.</p>
+    <a class="btn light" href="../Bakery/index.html">Order Online</a>
+  </div>
+
+</main>
+
+<footer>Every purchase supports the children at Kenya Children's Homes.</footer>
+
+</body>
+</html>
