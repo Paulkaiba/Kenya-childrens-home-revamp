@@ -2,7 +2,7 @@
 // Orders, rules and capacity live in ../../shared/store.js so the customer app and the
 // staff app read and write the same data. Products live in ProductRepository below
 // (localStorage key 'kch-catalog'), which the staff Menu Management screen edits.
-import { loadDb, saveDb, localYmd } from '../../shared/store.js';
+import { loadDb, saveDb, localYmd, DEFAULT_RULES } from '../../shared/store.js';
 
 const H = 36e5;
 
@@ -23,25 +23,21 @@ export class TieredLead extends LeadRule {
   hours(qty) { const t = this.tiers.find(t => qty > t.over); return t ? t.hours : 0; }
 }
 export class LeadPolicy {
-  constructor(rules) { this.rules = rules; }
-  hoursFor(category, qty) { return (this.rules[category] || new LeadRule()).hours(qty); }
+  // productRules: { productId: LeadRule }. A product with no rule needs no advance notice.
+  constructor(productRules = {}) { this.productRules = productRules; }
+  hoursForProduct(id, qty) { return (this.productRules[id] || new LeadRule()).hours(qty); }
 }
-// Fallback numbers (kept for tests). The customer app builds its policy from the
-// shared rules via policyFromRules(getRules()).
-export const defaultPolicy = () => new LeadPolicy({
-  bread: new TieredLead([{ over: 25, hours: 24 }, { over: 50, hours: 48 }]),
-  cake: new TieredLead([{ over: 2, hours: 48 }, { over: 0, hours: 24 }]),
-  pastry: new TieredLead([{ over: 5, hours: 24 }, { over: 10, hours: 48 }]),
-});
-// Build a LeadPolicy from the shared rules object: { bread: [{over, hours}], ... }
+// Build a LeadPolicy from the shared rules object: { productLead: { productId: [{ over, hours }] } }
 export const policyFromRules = rules => new LeadPolicy(Object.fromEntries(
-  Object.entries(rules.lead).map(([cat, tiers]) => [cat, new TieredLead(tiers)])));
+  Object.entries(rules.productLead || {}).filter(([, t]) => t && t.length).map(([id, t]) => [id, new TieredLead(t)])));
+// The starting rules (used by tests); the customer app builds its policy from the manager's saved rules.
+export const defaultPolicy = () => policyFromRules(DEFAULT_RULES);
 
 // ---- Catalog: products with sizes and flavours ----
 export class Size { constructor(id, label, price) { Object.assign(this, { id, label, price }); } }
 export class Product {
-  constructor({ id, name, category, emoji, desc, ingredients = [], allergens = [], sizes, flavours = [], custom = false, soldOut = false }) {
-    Object.assign(this, { id, name, category, emoji, desc, ingredients, allergens, flavours, custom, soldOut });
+  constructor({ id, name, category, emoji, desc, ingredients = [], allergens = [], sizes, flavours = [], custom = false, soldOut = false, hidden = false }) {
+    Object.assign(this, { id, name, category, emoji, desc, ingredients, allergens, flavours, custom, soldOut, hidden });
     this.sizes = sizes.map(s => s instanceof Size ? s : new Size(s.id, s.label, s.price));
   }
   get fromPrice() { return Math.min(...this.sizes.map(s => s.price)); }
@@ -127,7 +123,7 @@ export const CATALOG = [
 // actually stick and the customer site picks them up on next load.
 export class ProductRepository {
   constructor() { this.db = CATALOG.map(p => ProductRepository.toPlain(p)); }
-  static toPlain(p) { return { id: p.id, name: p.name, category: p.category, emoji: p.emoji, desc: p.desc, ingredients: [...p.ingredients], allergens: [...p.allergens], flavours: [...p.flavours], custom: p.custom, soldOut: p.soldOut, sizes: p.sizes.map(s => ({ id: s.id, label: s.label, price: s.price })) }; }
+  static toPlain(p) { return { id: p.id, name: p.name, category: p.category, emoji: p.emoji, desc: p.desc, ingredients: [...p.ingredients], allergens: [...p.allergens], flavours: [...p.flavours], custom: p.custom, soldOut: p.soldOut, hidden: !!p.hidden, sizes: p.sizes.map(s => ({ id: s.id, label: s.label, price: s.price })) }; }
   load() { return this.db; }
   persist(db) { this.db = db; }
   list() { return this.load().map(p => new Product(p)); }
@@ -140,6 +136,8 @@ export class ProductRepository {
   }
   remove(id) { this.persist(this.load().filter(p => p.id !== id)); }
   setSoldOut(id, soldOut) { const db = this.load(), p = db.find(p => p.id === id); if (p) { p.soldOut = soldOut; this.persist(db); } }
+  // Hidden products stay in the catalog (manager still sees them) but customers never see them.
+  setHidden(id, hidden) { const db = this.load(), p = db.find(p => p.id === id); if (p) { p.hidden = hidden; this.persist(db); } }
 }
 export class LocalStorageProductRepository extends ProductRepository {
   constructor() { super(); this._ensureSeeded(); }
@@ -167,9 +165,10 @@ export class Cart {
   bucketOf(l) { return l.product.category; }
   get buckets() { return [...new Set(this.lines.map(l => this.bucketOf(l)))]; }
   leadHoursFor(bucket, policy) {
-    const byCat = {};
-    this.lines.filter(l => this.bucketOf(l) === bucket).forEach(l => { byCat[l.product.category] = (byCat[l.product.category] || 0) + l.qty; });
-    return Math.max(0, ...Object.entries(byCat).map(([c, q]) => policy.hoursFor(c, q)));
+    // Each product is judged on its own rule, using the total of that product in the cart.
+    const qtyById = {};
+    this.lines.filter(l => this.bucketOf(l) === bucket).forEach(l => { qtyById[l.product.id] = (qtyById[l.product.id] || 0) + l.qty; });
+    return Math.max(0, ...Object.entries(qtyById).map(([id, q]) => policy.hoursForProduct(id, q)));
   }
   // Kept for callers that just want one worst-case figure across the whole cart.
   leadHours(policy) { return Math.max(0, ...this.buckets.map(b => this.leadHoursFor(b, policy))); }

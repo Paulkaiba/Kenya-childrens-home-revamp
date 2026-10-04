@@ -11,11 +11,12 @@ const setup = () => {
 };
 const me = () => new Customer('Paul Kaiba', '0712 345 678', 'Paul@Example.com');
 
-test('bread lead time: 25 same-day, 26+ one day, 51+ two days, summed across products', () => {
+test('bread lead time per product: 25 same-day, 26+ one day, 51+ two days; each loaf type is judged on its own', () => {
   const c = new Cart();
   c.add(wb, 'std', '', 25); assert.equal(c.leadHoursFor('bread', policy), 0);
-  c.add(bb, 'std', '', 1); assert.equal(c.leadHoursFor('bread', policy), 24);
-  c.add(wb, 'std', '', 25); assert.equal(c.leadHoursFor('bread', policy), 48);
+  c.add(bb, 'std', '', 25); assert.equal(c.leadHoursFor('bread', policy), 0);   // 25 + 25 of different loaves: not added together
+  c.add(wb, 'std', '', 1);  assert.equal(c.leadHoursFor('bread', policy), 24);  // 26 white bread
+  c.add(wb, 'std', '', 25); assert.equal(c.leadHoursFor('bread', policy), 48);  // 51 white bread
 });
 
 test('cakes need one day, size and flavour affect price not lead time', () => {

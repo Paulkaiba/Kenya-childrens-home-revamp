@@ -105,7 +105,7 @@ class App {
   }
 
   menu() {
-    const cards = this.catalog.list().map(p => `<div class="card">${p.soldOut ? '<span class="soldout-badge">Sold out</span>' : ''}<div class="emoji">${p.emoji}</div><b>${p.name}</b><div class="price">From ${ksh(p.fromPrice)}</div><small>${p.desc}</small>${p.soldOut ? '<button class="ghost" disabled>Sold out</button>' : `<button class="primary" data-order="${p.id}">Order</button>`}</div>`).join('');
+    const cards = this.catalog.list().filter(p => !p.hidden).map(p => `<div class="card">${p.soldOut ? '<span class="soldout-badge">Sold out</span>' : ''}<div class="emoji">${p.emoji}</div><b>${p.name}</b><div class="price">From ${ksh(p.fromPrice)}</div><small>${p.desc}</small>${p.soldOut ? '<button class="ghost" disabled>Sold out</button>' : `<button class="primary" data-order="${p.id}">Order</button>`}</div>`).join('');
     return `<h2>Menu</h2><p class="sub">Pick a product to see sizes, flavours and allergens before you order.</p><div class="cards">${cards}</div>`;
   }
 
@@ -123,7 +123,7 @@ class App {
   }
 
   simpleProduct() {
-    const s = this.pending, p = s.product, lead = this.policy.hoursFor(p.category, s.qty);
+    const s = this.pending, p = s.product, lead = this.policy.hoursForProduct(p.id, s.qty);
     return `<h2>${p.emoji} ${p.name}</h2><p class="sub">${p.desc}</p><div class="two"><div class="box">
       <label>Size</label><select name="size">${p.sizes.map(sz => `<option value="${sz.id}" ${sz.id === s.size ? 'selected' : ''}>${sz.label} — ${ksh(sz.price)}</option>`).join('')}</select>
       ${p.flavours.length ? `<label>Flavour</label><select name="flavour">${p.flavours.map(f => `<option ${f === s.flavour ? 'selected' : ''}>${f}</option>`).join('')}</select>` : ''}
@@ -145,7 +145,7 @@ class App {
         <p></p><button class="primary" data-cakenext>Continue</button> <button class="ghost" data-v="menu">Back to menu</button></div>`;
     }
     if (s.step === 'details') {
-      const lead = this.policy.hoursFor('cake', s.qty);
+      const lead = this.policy.hoursForProduct(p.id, s.qty);
       const units = s.units.map((u, i) => `<div class="box"><b>Cake ${i + 1}</b>
         <label>Size</label><select data-unit="${i}" data-field="size">${p.sizes.map(sz => `<option value="${sz.id}" ${sz.id === u.size ? 'selected' : ''}>${sz.label} — ${ksh(sz.price)}</option>`).join('')}</select>
         <label>Flavour</label><select data-unit="${i}" data-field="flavour">${p.flavours.map(f => `<option ${f === u.flavour ? 'selected' : ''}>${f}</option>`).join('')}</select>
@@ -158,7 +158,7 @@ class App {
     }
     // step === 'when' — this date only governs the cakes.
     const total = s.units.reduce((sum, u) => sum + p.size(u.size).price, 0);
-    const lead = this.policy.hoursFor('cake', s.qty);
+    const lead = this.policy.hoursForProduct(p.id, s.qty);
     return `<h2>${p.emoji} ${p.name}</h2><p class="sub">Choose when you need the cakes.</p><div class="box">
       ${s.units.map((u, i) => `<div class="row"><span>Cake ${i + 1}: ${p.size(u.size).label} · ${u.flavour}${u.message ? ' · “' + u.message + '”' : ''}</span><span>${ksh(p.size(u.size).price)}</span></div>`).join('')}
       <div class="row total"><span>Subtotal</span><span>${ksh(total)}</span></div>
@@ -248,7 +248,7 @@ class App {
       let lead = this.cart.leadHoursFor(d.cal, this.policy);
       if (this.currentView === 'product') {
         const s = this.pending;
-        const pendingLead = s.product.custom ? this.policy.hoursFor('cake', s.qty) : this.policy.hoursFor(s.product.category, s.qty);
+        const pendingLead = this.policy.hoursForProduct(s.product.id, s.qty);
         lead = Math.max(lead, pendingLead);
       }
       this.picker.open(d.cal, lead);

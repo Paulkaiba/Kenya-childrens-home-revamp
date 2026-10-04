@@ -23,14 +23,20 @@ or reject with `updateOrder(serial, { cancelRequested: false })`. Cancelled orde
 
 ## Product (`kch-products`)
 `{ id, name, category: 'bread'|'cake'|'pastry', emoji, desc, ingredients[], allergens[],
-   flavours[], custom: bool (true = cake wizard), available: bool,
+   flavours[], custom: bool (true = cake wizard), soldOut: bool (visible but not orderable),
+   hidden: bool (true = customers never see it; manager still does),
    sizes: [{ id, label, price }] }`
 
 ## Rules (`kch-rules`)
-`{ lead: { bread|cake|pastry: [{ over, hours }] },   // notice hours by quantity
+`{ productLead: { productId: [{ over, hours }] },     // notice per PRODUCT: more than `over` needs `hours`. No entry = no notice
    hours: { open: 8, close: 18, closedDays: [0] },   // 0 = Sunday
    closedDates: ['YYYY-MM-DD'], dailyCapacity: 20 }`
 
 ## store.js functions
 `initStore, getProducts, saveProducts, getRules, saveRules, getOrders, updateOrder(serial, changes),
 requestCancellation(serial), ordersOnDate('YYYY-MM-DD'), isDayFull(date), onDataChange(cb)`
+
+## Staff accounts (`kch-staff`) — staff app only, not read by the customer app
+`[{ id, name, username, password, role: 'manager'|'supervisor'|'baker' }]`  (plain text: prototype only, hash on a real server)
+Managers and supervisors add/remove accounts (supervisors never touch managers); only managers reset passwords.
+The signed-in person is `kch-staff-session`, re-checked against this list on every click, so a removed account is signed out.
