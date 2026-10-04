@@ -1,4 +1,4 @@
-import { StaffDirectory, AuthService, LocalSessionStore, LocalStorageOrderRepository, LocalStorageProductRepository, Product, flattenLines, filterLines, nextStatus, productionSummary, STATUS_FLOW, parseTiers, tiersToText, describeTiers, parseDates } from './staffDomain.js';
+import { StaffDirectory, LocalStaffDirectory, StaffError, AuthService, LocalSessionStore, LocalStorageOrderRepository, LocalStorageProductRepository, Product, flattenLines, filterLines, nextStatus, productionSummary, STATUS_FLOW, parseTiers, tiersToText, describeTiers, parseDates } from './staffDomain.js';
 import { getRules, saveRules, DEFAULT_RULES } from '../../shared/store.js';
 
 const $ = s => document.querySelector(s);
@@ -6,15 +6,17 @@ const ksh = n => 'Ksh ' + n.toLocaleString();
 const when = iso => new Date(iso).toLocaleString('en-KE', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
 const today = () => new Date().toISOString().slice(0, 10);
 const itemLabel = l => `${l.name} (${l.size}${l.flavour ? ', ' + l.flavour : ''})${l.message ? ' — “' + l.message + '”' : ''}`;
-// Manager-only sections that exist in the sidebar but aren't built yet — shown
-// locked for everyone right now so the role model is visible either way.
-const MANAGER_ONLY = ['menu', 'rules', 'staff'];
+// Sections only managers may open. Staff Accounts is separate: managers AND supervisors.
+const MANAGER_ONLY = ['menu', 'rules'];
+const ROLE_LABEL = { manager: 'Manager', supervisor: 'Supervisor', baker: 'Baker' };
+const esc = t => String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const CATEGORIES = ['bread', 'cake', 'pastry'];
 
 class StaffApp {
-  constructor(staff) {
-    this.staff = staff;
+  constructor(staff, directory, auth) {
+    Object.assign(this, { staff, directory, auth });
+    this.resettingStaff = null; // account id whose password box is open
     this.repo = new LocalStorageOrderRepository();
     this.catalog = new LocalStorageProductRepository();
     this.filters = { status: '', category: '', date: '' };
@@ -25,27 +27,39 @@ class StaffApp {
     $('#who').textContent = `${staff.name} · ${roleLabel}`;
     $('#role-banner').textContent = {
       manager: 'Manager access — full visibility and controls.',
-      supervisor: 'Supervisor access — you can view orders and reports, but cannot change order status, menu, rules or staff.',
-      baker: 'Baker access — you can view and update orders, but not menu, rules or staff.',
+      supervisor: 'Supervisor access — you can view orders and reports and add or remove baker and supervisor accounts, but cannot change order status, menu, rules or passwords.',
+      baker: 'Baker access — you can view and update orders, but not menu, rules or staff accounts.',
     }[staff.role] || '';
     if (staff.isManager) {
       [['menu', 'Menu Management'], ['rules', 'Scheduling Rules']].forEach(([v, label]) => {
         const b = document.querySelector(`[data-v="${v}"]`); b.classList.remove('locked'); b.textContent = label;
       });
     }
-    document.querySelectorAll('.side button').forEach(b => b.addEventListener('click', () => this.go(b.dataset.v)));
-    $('#logout').addEventListener('click', e => { e.preventDefault(); new AuthService(new StaffDirectory(), new LocalSessionStore()).logout(); location.href = 'index.html'; });
+    if (staff.canManageStaff) { const b = document.querySelector('[data-v="staff"]'); b.classList.remove('locked'); b.textContent = 'Staff Accounts'; }
+    $('#logout').addEventListener('click', e => { e.preventDefault(); this.auth.logout(); location.href = 'index.html'; });
     document.addEventListener('click', e => this.onClick(e));
     document.addEventListener('change', e => this.onChange(e));
     this.show('queue');
   }
-  go(v) {
-    if (MANAGER_ONLY.includes(v) && !this.staff.isManager) { alert('Manager access only — ask your manager for this.'); return; }
-    this.show(v);
+  // One gate for every way of opening a section (sidebar, back buttons, anything), so a baker or
+  // supervisor can never reach a screen their role doesn't allow.
+  allowed(v) {
+    if (v === 'staff') return !!this.staff.canManageStaff;
+    if (MANAGER_ONLY.includes(v)) return !!this.staff.isManager;
+    return true;
+  }
+  // If this account was removed (even from another tab), send the person back to the login page.
+  stillSignedIn() {
+    const now = this.auth.current();
+    if (!now) { location.href = 'index.html'; return false; }
+    this.staff = now;
+    return true;
   }
   show(v) {
+    if (!this.allowed(v)) { alert(v === 'staff' ? 'Only managers and supervisors can manage staff accounts.' : 'Manager access only — ask your manager for this.'); return; }
     document.querySelectorAll('.side button').forEach(b => b.classList.toggle('active', b.dataset.v === (v === 'item' ? 'production' : v)));
-    $('#view').innerHTML = this[v] ? this[v]() : this.locked();
+    const screen = { staff: 'accounts' }[v] || v;   // `this.staff` is the signed-in person, so that screen is called accounts()
+    $('#view').innerHTML = this[screen] ? this[screen]() : this.locked();
   }
   locked() { return `<div class="box"><b>Manager access only</b><p class="sub">This section is for managers. It is not built yet in this prototype — next step after the order queue and production view.</p></div>`; }
 
@@ -99,7 +113,35 @@ class StaffApp {
       <div class="box table-wrap"><table><tr><th>Serial</th><th>Customer</th><th>Qty</th><th>Specification</th><th>Status</th><th></th></tr>${rows}</table></div>`;
   }
 
-  // ---- Scheduling Rules (manager only, enforced in go()). Nothing here is hardcoded:
+  // ---- Staff Accounts (managers and supervisors). Only managers can reset passwords. ----
+  accounts() {
+    const me = this.staff, canReset = !!me.canResetPasswords;
+    const rows = this.directory.list().map(p => {
+      const blocker = this.directory.removeBlocker(me, p.id);
+      const reset = !canReset ? '' : this.resettingStaff === p.id
+        ? `<input type="text" data-pwinput="${p.id}" placeholder="New password (6+ characters)" style="width:200px"> <button class="primary" data-savepw="${p.id}">Save</button> <button class="ghost" data-cancelpw>Cancel</button>`
+        : `<button class="ghost" data-resetpw="${p.id}">Reset password</button>`;
+      const remove = blocker ? `<small class="sub">${esc(blocker)}</small>` : `<button class="ghost" data-removestaff="${p.id}">Remove</button>`;
+      return `<tr><td>${esc(p.name)}${p.id === me.id ? ' <span class="tag-hidden">You</span>' : ''}</td><td>${esc(p.username)}</td><td>${ROLE_LABEL[p.role]}</td><td class="acct-actions">${reset} ${remove}</td></tr>`;
+    }).join('');
+    const roles = StaffDirectory.manageableRoles(me.role).map(r => `<option value="${r}" ${r === 'baker' ? 'selected' : ''}>${ROLE_LABEL[r]}</option>`).join('');
+    return `<h2>Staff Accounts</h2><p class="sub">Add or remove the people who can sign in to this staff area.${canReset ? ' If someone forgets their password, reset it here and tell them the new one.' : ' Password resets are done by a manager.'}</p>
+      <div class="box"><b>Add a person</b>
+        <div class="two"><div><label>Full name</label><input data-sf="name"></div><div><label>Username (they sign in with this)</label><input data-sf="username" autocapitalize="off"></div></div>
+        <div class="two"><div><label>Role</label><select data-sf="role">${roles}</select></div><div><label>Starting password (6+ characters)</label><input type="text" data-sf="password"></div></div>
+        <p></p><button class="primary" data-addstaff>Add account</button></div>
+      <div class="box table-wrap"><table><tr><th>Name</th><th>Username</th><th>Role</th><th></th></tr>${rows}</table></div>`;
+  }
+
+  addStaff() {
+    const f = k => document.querySelector(`[data-sf="${k}"]`);
+    try {
+      this.directory.add(this.staff, { name: f('name').value, username: f('username').value, role: f('role').value, password: f('password').value });
+      this.show('staff');
+    } catch (e) { if (e instanceof StaffError) alert(e.message); else throw e; }
+  }
+
+  // ---- Scheduling Rules (manager only, enforced in show()). Nothing here is hardcoded:
   // everything is saved to the shared store and read by the customer site. ----
   rules() {
     const r = getRules(), products = this.catalog.list();
@@ -143,7 +185,7 @@ class StaffApp {
     this.show('rules');
   }
 
-  // ---- Menu Management (manager only, enforced in go()) ----
+  // ---- Menu Management (manager only, enforced in show()) ----
   menu() {
     const products = this.catalog.list();
     const rows = products.map(p => this.editingProduct === p.id ? this.productForm(p) : `
@@ -208,6 +250,7 @@ class StaffApp {
   }
 
   onClick(e) {
+    if (!this.stillSignedIn()) return;
     const d = e.target.closest('button')?.dataset; if (!d) return;
     if (d.item) { const [category, key] = d.item.split('|'); this.prodItem = { category, key: decodeURIComponent(key) }; this.show('item'); }
     else if (d.lineadvance) {
@@ -216,6 +259,25 @@ class StaffApp {
       this.show('item');
     }
     else if (d.cancel) { if (confirm(`Cancel order ${d.cancel}? This cancels every item in it.`)) { this.repo.cancelOrder(d.cancel); this.show('queue'); } }
+    else if (d.addstaff !== undefined) { this.addStaff(); }
+    else if (d.removestaff) {
+      const id = Number(d.removestaff), who = this.directory.byId(id);
+      if (who && confirm(`Remove ${who.name}? They will no longer be able to sign in.`)) {
+        try { this.directory.remove(this.staff, id); } catch (err) { if (err instanceof StaffError) alert(err.message); else throw err; }
+        this.show('staff');
+      }
+    }
+    else if (d.resetpw) { this.resettingStaff = Number(d.resetpw); this.show('staff'); }
+    else if (d.cancelpw !== undefined) { this.resettingStaff = null; this.show('staff'); }
+    else if (d.savepw) {
+      const id = Number(d.savepw), who = this.directory.byId(id);
+      try {
+        this.directory.resetPassword(this.staff, id, document.querySelector(`[data-pwinput="${id}"]`).value);
+        this.resettingStaff = null;
+        alert(`Password changed for ${who ? who.name : 'this account'}. Tell them the new password.`);
+        this.show('staff');
+      } catch (err) { if (err instanceof StaffError) alert(err.message); else throw err; }
+    }
     else if (d.saverules !== undefined) { this.saveRulesForm(); }
     else if (d.resetrules !== undefined) { if (confirm('Reset every scheduling rule to the original defaults?')) { saveRules(DEFAULT_RULES); this.show('rules'); } }
     else if (d.newproduct !== undefined) { this.editingProduct = 'new'; this.show('menu'); }
@@ -226,6 +288,7 @@ class StaffApp {
     else if (d.v) this.show(d.v);
   }
   onChange(e) {
+    if (!this.stillSignedIn()) return;
     if (e.target.dataset.filter) { this.filters[e.target.dataset.filter] = e.target.value; this.show('queue'); }
     else if (e.target.id === 'prod-date') { this.prodDate = e.target.value; this.show('production'); }
     else if (e.target.dataset.soldout) { this.catalog.setSoldOut(e.target.dataset.soldout, e.target.checked); this.show('menu'); }
@@ -233,7 +296,8 @@ class StaffApp {
   }
 }
 
-const auth = new AuthService(new StaffDirectory(), new LocalSessionStore());
+const directory = new LocalStaffDirectory();
+const auth = new AuthService(directory, new LocalSessionStore());
 const staff = auth.current();
 if (!staff) location.href = 'index.html';
-else new StaffApp(staff);
+else new StaffApp(staff, directory, auth);

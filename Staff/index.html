@@ -14,8 +14,8 @@
   <p class="sub" style="margin-top:18px">Demo accounts — manager: amina / manager123 &nbsp;·&nbsp; baker: peter / baker123</p>
 </div></div>
 <script type="module">
-  import { StaffDirectory, AuthService, LocalSessionStore, AuthError } from './js/staffDomain.js';
-  const auth = new AuthService(new StaffDirectory(), new LocalSessionStore());
+  import { LocalStaffDirectory, AuthService, LocalSessionStore, AuthError } from './js/staffDomain.js';
+  const auth = new AuthService(new LocalStaffDirectory(), new LocalSessionStore());
   if (auth.current()) location.href = 'dashboard.html';
   const go = () => {
     try { auth.login(document.getElementById('u').value, document.getElementById('p').value); location.href = 'dashboard.html'; }
