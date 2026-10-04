@@ -1,147 +1,121 @@
-// kch/shared/store.js — single source of truth for both apps
-const KEYS = { products: 'kch_products', orders: 'kch_orders', rules: 'kch_rules' };
+// shared/store.js — single source of truth for the customer app and the staff app.
+// Nothing touches localStorage at import time, so Node tests can still import this.
+const KEYS = { db: 'kch-bakery', products: 'kch-products', rules: 'kch-rules' };
 
-const cake = (id, name, price) => ({
-  id, name, price, unit: 'kg', minQty: 1, category: 'Cakes', image: '', available: true,
-});
-const item = (id, name, price, category, packPrice = null) => ({
-  id, name, price, packPrice, unit: 'each', minQty: 1, category, image: '', available: true,
-});
-
-const DEFAULT_PRODUCTS = [
-  // ---- Cakes: priced per 1 kg ----
-  cake('c01', 'Mint Chocolate / Vanilla', 2200),
-  cake('c02', 'Red Velvet', 2200),
-  cake('c03', 'Chocolate Cake', 2200),
-  cake('c04', 'Carrot Cake', 2200),
-  cake('c05', 'Fruit Cake', 2700),
-  cake('c06', 'Blueberry', 2200),
-  cake('c07', 'Butterscotch', 2200),
-  cake('c08', 'Bubblegum', 2200),
-  cake('c09', 'Lemon Cake', 2200),
-  cake('c10', 'Cappuccino Cake', 2200),
-  cake('c11', 'Chocolate Fudge', 2200),
-  cake('c12', 'White Forest', 2200),
-  cake('c13', 'Banana Cake', 2200),
-  cake('c14', 'Marble Cake', 2200),
-  cake('c15', 'Black Forest Cake', 2200),
-  cake('c16', 'Toffee Cake', 2200),
-  cake('c17', 'Pinacolada', 2200),
-  cake('c18', 'Vanilla Cake', 1800),
-  cake('c19', 'Strawberry Cake', 1800),
-  cake('c20', 'Marble Cake (1800 range)', 1800),
-
-  // ---- Bread ----
-  item('b01', 'White Bread 800g', 123, 'Bread', 225),
-  item('b02', 'White Bread 400g', 63,  'Bread', 225),
-  item('b03', 'White Bread 200g', 35,  'Bread', 225),
-  item('b04', 'Brown Bread 800g', 123, 'Bread', 225),
-  item('b05', 'Brown Bread 400g', 63,  'Bread', 225),
-  item('b06', 'Brown Bread 200g', 35,  'Bread', 225),
-
-  // ---- Buns & pastries ----
-  item('p01', 'Scones',        13, 'Buns & Pastries', 260),
-  item('p02', 'Ring Buns',      8, 'Buns & Pastries', 95),
-  item('p03', 'Round Buns',    15, 'Buns & Pastries', 90),
-  item('p04', 'Long Rolls',    15, 'Buns & Pastries'),
-  item('p05', 'Doughnut',      15, 'Buns & Pastries', 90),
-  item('p06', 'Tea Scones',    35, 'Buns & Pastries', 225),
-  item('p07', 'Croissants',    50, 'Buns & Pastries'),
-  item('p08', 'Sausage Roll',  55, 'Buns & Pastries'),
-  item('p09', 'Danish',        55, 'Buns & Pastries'),
-
-  // ---- Small cakes & cookies ----
-  item('s01', 'Queen Cakes',   25, 'Cakes & Cookies', 225),
-  item('s02', 'Cookies',       20, 'Cakes & Cookies', 200),
-  item('s03', 'Madeira 470g', 130, 'Cakes & Cookies'),
-  item('s04', 'Madeira 1kg',  270, 'Cakes & Cookies'),
+// ---------- Default products (real Kelvin Loaf prices) ----------
+const kgSizes = price => [
+  { id: '1kg', label: '1 kg (8–10 people)',  price },
+  { id: '2kg', label: '2 kg (16–20 people)', price: price * 2 },
+  { id: '3kg', label: '3 kg (24–30 people)', price: price * 3 },
 ];
-const DEFAULT_RULES = {
-  leadTimeHours: 24,                // minimum notice before pickup
-  dailyCapacity: 20,                // max orders per day
-  hours: {                          // 0 = Sunday ... 6 = Saturday; null = closed
-    0: null,
-    1: { open: '08:00', close: '17:00' },
-    2: { open: '08:00', close: '17:00' },
-    3: { open: '08:00', close: '17:00' },
-    4: { open: '08:00', close: '17:00' },
-    5: { open: '08:00', close: '17:00' },
-    6: { open: '09:00', close: '13:00' },
+const cake = (id, name, desc, price, flavours) => ({
+  id, name, desc, flavours, sizes: kgSizes(price),
+  category: 'cake', emoji: '🎂', custom: true, available: true,
+  ingredients: ['Wheat flour', 'Eggs', 'Butter', 'Sugar', 'Milk'],
+  allergens: ['Gluten', 'Eggs', 'Milk'],
+});
+const bread = (id, name, desc, ingredients, allergens) => ({
+  id, name, desc, ingredients, allergens, flavours: [],
+  category: 'bread', emoji: '🍞', custom: false, available: true,
+  sizes: [
+    { id: '200g', label: '200 g', price: 35 },
+    { id: '400g', label: '400 g', price: 63 },
+    { id: '800g', label: '800 g', price: 123 },
+  ],
+});
+const small = (id, name, emoji, each, pack = null) => ({
+  id, name, emoji, desc: `Freshly baked ${name.toLowerCase()}.`,
+  category: 'pastry', custom: false, available: true, flavours: [],
+  ingredients: ['Wheat flour', 'Butter', 'Sugar', 'Eggs'], allergens: ['Gluten', 'Eggs', 'Milk'],
+  sizes: [{ id: 'each', label: 'Single', price: each },
+          ...(pack ? [{ id: 'pack', label: 'Pack', price: pack }] : [])],
+});
+
+export const DEFAULT_PRODUCTS = [
+  cake('ck', 'Celebration Cake', 'Iced to order, priced per kg. Choose the size, flavour and message for each cake.', 2200,
+    ['Mint Chocolate', 'Red Velvet', 'Chocolate', 'Carrot', 'Blueberry', 'Butterscotch', 'Bubblegum',
+     'Lemon', 'Cappuccino', 'Chocolate Fudge', 'White Forest', 'Banana', 'Black Forest', 'Toffee', 'Pinacolada']),
+  cake('cl', 'Classic Cake', 'Vanilla, strawberry or marble sponge, priced per kg.', 1800,
+    ['Vanilla', 'Strawberry', 'Marble']),
+  cake('cf', 'Fruit Cake', 'Rich fruit cake, priced per kg.', 2700, ['Fruit']),
+
+  bread('wb', 'White Bread', 'Soft daily-baked white loaf.',
+    ['Wheat flour', 'Yeast', 'Sugar', 'Salt', 'Milk'], ['Gluten', 'Milk']),
+  bread('bb', 'Brown Bread', 'Wholemeal loaf, lightly sweetened.',
+    ['Wheat flour', 'Whole wheat', 'Yeast', 'Sugar', 'Salt'], ['Gluten']),
+
+  small('qc', 'Queen Cakes', '🧁', 25, 225),
+  small('sc', 'Scones', '🥐', 13, 260),
+  small('ts', 'Tea Scones', '🥐', 35, 225),
+  small('rb', 'Ring Buns', '🍩', 8, 95),
+  small('ro', 'Round Buns', '🥯', 15, 90),
+  small('lr', 'Long Rolls', '🥖', 15),
+  small('dn', 'Doughnut', '🍩', 15, 90),
+  small('cr', 'Croissants', '🥐', 50),
+  small('sr', 'Sausage Roll', '🥐', 55),
+  small('da', 'Danish', '🥐', 55),
+  small('co', 'Cookies', '🍪', 20, 200),
+  { ...small('md', 'Madeira Cake', '🍰', 130),
+    sizes: [{ id: '470g', label: '470 g', price: 130 }, { id: '1kg', label: '1 kg', price: 270 }] },
+];
+
+// ---------- Default rules (same numbers your defaultPolicy() had) ----------
+export const DEFAULT_RULES = {
+  lead: {                                   // hours of notice by category, by quantity
+    bread:  [{ over: 25, hours: 24 }, { over: 50, hours: 48 }],
+    cake:   [{ over: 2,  hours: 48 }, { over: 0,  hours: 24 }],
+    pastry: [{ over: 5,  hours: 24 }, { over: 10, hours: 48 }],
   },
-  closedDates: [],                  // e.g. ['2026-12-25']
+  hours: { open: 8, close: 18, closedDays: [0] },   // 0 = Sunday
+  closedDates: [],                                  // e.g. ['2026-12-25']
+  dailyCapacity: 20,                                // max active orders per pickup day
 };
 
+// ---------- Low-level helpers ----------
 const read = (key, fallback) => {
-  try { return JSON.parse(localStorage.getItem(key)) ?? fallback; }
+  try { const v = JSON.parse(localStorage.getItem(key)); return v ?? fallback; }
   catch { return fallback; }
 };
 const write = (key, value) => localStorage.setItem(key, JSON.stringify(value));
 
 export function initStore() {
   if (!localStorage.getItem(KEYS.products)) write(KEYS.products, DEFAULT_PRODUCTS);
-  if (!localStorage.getItem(KEYS.orders))   write(KEYS.orders, []);
   if (!localStorage.getItem(KEYS.rules))    write(KEYS.rules, DEFAULT_RULES);
 }
 
-// ---- Products ----
-export const getProducts = () => read(KEYS.products, []);
-export const saveProducts = (list) => write(KEYS.products, list);
+// ---------- Products & rules ----------
+export const getProducts  = () => read(KEYS.products, DEFAULT_PRODUCTS);
+export const saveProducts = list => write(KEYS.products, list);
+export const getRules     = () => ({ ...DEFAULT_RULES, ...read(KEYS.rules, {}) });
+export const saveRules    = rules => write(KEYS.rules, rules);
 
-// ---- Rules ----
-export const getRules = () => read(KEYS.rules, DEFAULT_RULES);
-export const saveRules = (rules) => write(KEYS.rules, rules);
+// ---------- Orders (stored as { orders: [], seq: {} } under 'kch-bakery') ----------
+export const loadDb   = () => read(KEYS.db, { orders: [], seq: {} });
+export const saveDb   = db => write(KEYS.db, db);
+export const getOrders = () => loadDb().orders;
 
-// ---- Orders ----
-export const getOrders = () => read(KEYS.orders, []);
-
-export function addOrder({ customer, items, pickupDate, pickupTime }) {
-  const orders = getOrders();
-  const order = {
-    id: 'KCH-' + Date.now().toString(36).toUpperCase(),
-    customer,                       // { name, phone }
-    items,                          // [{ productId, name, price, qty }]
-    total: items.reduce((s, i) => s + i.price * i.qty, 0),
-    pickupDate,                     // 'YYYY-MM-DD'
-    pickupTime,                     // 'HH:MM'
-    status: 'pending',              // pending | confirmed | baking | ready | collected | cancelled
-    cancelRequested: false,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  };
-  orders.push(order);
-  write(KEYS.orders, orders);
+export function updateOrder(serial, changes) {        // used by the staff app
+  const db = loadDb();
+  const order = db.orders.find(o => o.serial === serial);
+  if (!order) return null;
+  Object.assign(order, changes, { updatedAt: new Date().toISOString() });
+  saveDb(db);
   return order;
 }
+export const requestCancellation = serial => updateOrder(serial, { cancelRequested: true });
 
-export function updateOrder(id, changes) {   // used by Paul's staff app
-  const orders = getOrders().map(o =>
-    o.id === id ? { ...o, ...changes, updatedAt: new Date().toISOString() } : o);
-  write(KEYS.orders, orders);
-}
+// ---------- Capacity ----------
+export const localYmd = d =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-export const requestCancellation = (id) => updateOrder(id, { cancelRequested: true });
+export const ordersOnDate = ymd => getOrders().filter(o =>
+  o.status !== 'Cancelled' && Object.values(o.pickups || {}).some(iso => localYmd(new Date(iso)) === ymd));
 
-// ---- Scheduling helpers ----
-export function ordersOnDate(dateStr) {
-  return getOrders().filter(o => o.pickupDate === dateStr && o.status !== 'cancelled');
-}
-export function isDayFull(dateStr) {
-  return ordersOnDate(dateStr).length >= getRules().dailyCapacity;
-}
-export function isDayOpen(dateStr) {
-  const rules = getRules();
-  const day = new Date(dateStr + 'T00:00').getDay();
-  return !!rules.hours[day] && !rules.closedDates.includes(dateStr);
-}
-export function meetsLeadTime(dateStr, timeStr) {
-  const pickup = new Date(`${dateStr}T${timeStr}`);
-  const earliest = Date.now() + getRules().leadTimeHours * 3600 * 1000;
-  return pickup.getTime() >= earliest;
-}
+export const isDayFull = day => ordersOnDate(localYmd(day)).length >= getRules().dailyCapacity;
 
-// ---- Live updates (fires when ANOTHER tab/app changes the data) ----
+// ---------- Live updates (fires in OTHER tabs when data changes) ----------
 export function onDataChange(callback) {
-  window.addEventListener('storage', (e) => {
+  window.addEventListener('storage', e => {
     if (Object.values(KEYS).includes(e.key)) callback(e.key);
   });
 }
