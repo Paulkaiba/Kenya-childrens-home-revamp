@@ -1,6 +1,7 @@
 // shared/store.js — single source of truth for the customer app and the staff app.
 // Nothing touches localStorage at import time, so Node tests can still import this.
-const KEYS = { db: 'kch-bakery', products: 'kch-products', rules: 'kch-rules' };
+   const KEYS = { db: 'kch-bakery', products: 'kch-products', rules: 'kch-rules', catalog: 'kch-catalog' };
+
 
 // ---------- Default products (real Kelvin Loaf prices) ----------
 const kgSizes = price => [

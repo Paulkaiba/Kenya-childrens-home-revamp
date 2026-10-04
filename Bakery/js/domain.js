@@ -1,7 +1,8 @@
 // Pure domain logic: no DOM access, so every class can be unit-tested in Node.
-// Data (products, rules, orders) now lives in ../../shared/store.js so the
-// customer app and the staff app read and write the same thing.
-import { getProducts, loadDb, saveDb, localYmd } from '../../shared/store.js';
+// Orders, rules and capacity live in ../../shared/store.js so the customer app and the
+// staff app read and write the same data. Products live in ProductRepository below
+// (localStorage key 'kch-catalog'), which the staff Menu Management screen edits.
+import { loadDb, saveDb, localYmd } from '../../shared/store.js';
 
 const H = 36e5;
 
@@ -25,7 +26,7 @@ export class LeadPolicy {
   constructor(rules) { this.rules = rules; }
   hoursFor(category, qty) { return (this.rules[category] || new LeadRule()).hours(qty); }
 }
-// Fallback numbers (kept for tests). The app itself builds its policy from the
+// Fallback numbers (kept for tests). The customer app builds its policy from the
 // shared rules via policyFromRules(getRules()).
 export const defaultPolicy = () => new LeadPolicy({
   bread: new TieredLead([{ over: 25, hours: 24 }, { over: 50, hours: 48 }]),
@@ -46,8 +47,7 @@ export class Product {
   get fromPrice() { return Math.min(...this.sizes.map(s => s.price)); }
   size(id) { return this.sizes.find(s => s.id === id) || this.sizes[0]; }
 }
-const toProducts = list => list.filter(p => p.available !== false).map(p => new Product(p));
-export const getCatalog = () => toProducts(getProducts());    // live shared data, used by the app
+
 // Real Kelvinloaf Bakery menu and prices, from the stakeholder's two price-list photos
 // (Oct 3). Packet/pack quantities were not printed on the sheet for every item — where
 // we had to invent one (noted "placeholder qty" below), it's a guess to unblock the
@@ -147,34 +147,6 @@ export class LocalStorageProductRepository extends ProductRepository {
   persist(db) { this.db = db; localStorage.setItem('kch-catalog', JSON.stringify(db)); }
   _ensureSeeded() { if (!localStorage.getItem('kch-catalog')) this.persist(this.db); }
 }
-
-// FROZEN TEST FIXTURE. tests/domain.test.js picks products from CATALOG by position and
-// asserts exact prices, so this list must keep this order and these numbers.
-// The real menu lives in shared/store.js (DEFAULT_PRODUCTS) and is read with getCatalog().
-export const CATALOG = [
-  new Product({ id: 'wb', name: 'White Bread', category: 'bread', emoji: '🍞',
-    desc: 'Soft daily-baked white loaf.', ingredients: ['Wheat flour', 'Yeast', 'Sugar', 'Salt', 'Milk'], allergens: ['Gluten', 'Milk'],
-    sizes: [{ id: 'std', label: 'Standard loaf', price: 80 }] }),
-  new Product({ id: 'bb', name: 'Brown Bread', category: 'bread', emoji: '🍞',
-    desc: 'Wholemeal loaf, lightly sweetened.', ingredients: ['Wheat flour', 'Whole wheat', 'Yeast', 'Sugar', 'Salt'], allergens: ['Gluten'],
-    sizes: [{ id: 'std', label: 'Standard loaf', price: 90 }] }),
-  new Product({ id: 'ck', name: 'Celebration Cake', category: 'cake', emoji: '🎂', custom: true,
-    desc: 'Vanilla or chocolate sponge, iced to order. Choose the size, flavour and message for each cake.',
-    ingredients: ['Wheat flour', 'Eggs', 'Butter', 'Sugar', 'Milk'], allergens: ['Gluten', 'Eggs', 'Milk'],
-    flavours: ['Vanilla', 'Chocolate', 'Red velvet', 'Marble'],
-    sizes: [{ id: '1kg', label: '1 kg (8–10 people)', price: 650 }, { id: '2kg', label: '2 kg (16–20 people)', price: 1200 }, { id: '3kg', label: '3 kg (24–30 people)', price: 1700 }] }),
-  new Product({ id: 'cu', name: 'Cupcakes', category: 'pastry', emoji: '🧁',
-    desc: 'Boxed cupcakes, sold by the dozen.', ingredients: ['Wheat flour', 'Eggs', 'Butter', 'Sugar'], allergens: ['Gluten', 'Eggs', 'Milk'],
-    flavours: ['Vanilla', 'Chocolate', 'Red velvet'],
-    sizes: [{ id: 'box12', label: 'Box of 12', price: 480 }] }),
-  new Product({ id: 'pp', name: 'Pastry Pack', category: 'pastry', emoji: '🥐',
-    desc: 'Mixed savoury and sweet pastries.', ingredients: ['Wheat flour', 'Butter', 'Eggs'], allergens: ['Gluten', 'Eggs', 'Milk'],
-    sizes: [{ id: 'box6', label: 'Box of 6', price: 220 }] }),
-  new Product({ id: 'sc', name: 'Slice Cake Box', category: 'pastry', emoji: '🍰',
-    desc: 'Pre-cut cake slices, boxed.', ingredients: ['Wheat flour', 'Eggs', 'Butter', 'Sugar'], allergens: ['Gluten', 'Eggs', 'Milk'],
-    flavours: ['Vanilla', 'Chocolate'],
-    sizes: [{ id: 'box6', label: 'Box of 6', price: 350 }] }),
-];
 
 // ---- Cart: one shared cart across products, like an Uber-style checkout ----
 export class Cart {
@@ -280,13 +252,17 @@ export class OrderRepository {
     if (!line) return;
     line.status = status;
     if (order.lines.every(l => l.status === 'Collected')) order.status = 'Collected';
+    order.updatedAt = new Date().toISOString();
     this.persist(db);
   }
+  // Staff approve a cancellation (request or phone call): the whole order and every line are cancelled.
   cancelOrder(serial) {
     const db = this.load(), order = db.orders.find(o => o.serial === serial);
     if (!order) return;
     order.status = 'Cancelled';
+    order.cancelRequested = false;
     order.lines.forEach(l => { l.status = 'Cancelled'; });
+    order.updatedAt = new Date().toISOString();
     this.persist(db);
   }
   find(phone, email) {
@@ -330,20 +306,18 @@ export class OrderService {
     const order = {
       serial, fulfilment, location, fee, notes, status: 'Received', cancelRequested: false, total: cart.subtotal + fee,
       customer: { name: customer.name, phone: customer.phone, email: customer.email },
-      lines: cart.lines.map(l => ({ name: l.product.name, size: l.size.label, flavour: l.flavour || null, message: l.message || null, qty: l.qty, price: l.size.price, bucket: cart.bucketOf(l) })),
-      pickups, when: earliest.toISOString(), createdAt: now.toISOString(), updatedAt: now.toISOString(),
       lines: cart.lines.map((l, i) => ({
         id: `${serial}-L${i + 1}`, name: l.product.name, size: l.size.label, flavour: l.flavour || null,
         message: l.message || null, qty: l.qty, price: l.size.price, bucket: cart.bucketOf(l), status: 'Received',
       })),
-      pickups, when: earliest.toISOString(), createdAt: now.toISOString(),
+      pickups, when: earliest.toISOString(), createdAt: now.toISOString(), updatedAt: now.toISOString(),
     };
     this.repo.add(order);
     cart.clear();
     return order;
   }
 
-  // Instant cancel (kept for tests / staff use). The customer app now uses requestCancel().
+  // Instant cancel (kept for tests / staff use). The customer app uses requestCancel().
   cancel(serial) {
     const o = this.repo.get(serial);
     if (!o || o.status !== 'Received') throw new ValidationError(['This order cannot be cancelled']);
@@ -353,7 +327,8 @@ export class OrderService {
   }
 
   // Customer-side cancellation is a REQUEST: the status does not change.
-  // Staff approve it with updateOrder(serial, { status: 'Cancelled' }) in the staff app.
+  // Staff approve it with repo.cancelOrder(serial), or reject it with
+  // repo.update(serial, { cancelRequested: false }).
   requestCancel(serial) {
     const o = this.repo.get(serial);
     if (!o || !['Received', 'Confirmed'].includes(o.status) || o.cancelRequested)
