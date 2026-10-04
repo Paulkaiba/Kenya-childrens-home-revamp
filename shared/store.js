@@ -1,6 +1,7 @@
 // shared/store.js — single source of truth for the customer app and the staff app.
 // Nothing touches localStorage at import time, so Node tests can still import this.
-const KEYS = { db: 'kch-bakery', products: 'kch-products', rules: 'kch-rules' };
+   const KEYS = { db: 'kch-bakery', products: 'kch-products', rules: 'kch-rules', catalog: 'kch-catalog' };
+
 
 // ---------- Default products (real Kelvin Loaf prices) ----------
 const kgSizes = price => [
@@ -60,15 +61,19 @@ export const DEFAULT_PRODUCTS = [
 ];
 
 // ---------- Default rules (same numbers your defaultPolicy() had) ----------
+// Notice is set per product: productLead = { productId: [{ over, hours }] } means "more than `over` of
+// this product needs `hours` of notice". A product with no entry needs no advance notice.
+// These starting values are the old bread / cake / pastry numbers, copied onto each product; the manager edits them.
+const seedLead = (ids, tiers) => Object.fromEntries(ids.map(id => [id, tiers.map(t => ({ ...t }))]));
 export const DEFAULT_RULES = {
-  lead: {                                   // hours of notice by category, by quantity
-    bread:  [{ over: 25, hours: 24 }, { over: 50, hours: 48 }],
-    cake:   [{ over: 2,  hours: 48 }, { over: 0,  hours: 24 }],
-    pastry: [{ over: 5,  hours: 24 }, { over: 10, hours: 48 }],
-  },
   hours: { open: 8, close: 18, closedDays: [0] },   // 0 = Sunday
   closedDates: [],                                  // e.g. ['2026-12-25']
   dailyCapacity: 20,                                // max active orders per pickup day
+  productLead: {
+    ...seedLead(['wb', 'bb'], [{ over: 25, hours: 24 }, { over: 50, hours: 48 }]),
+    ...seedLead(['ck', 'ckb', 'ckf', 'ckc'], [{ over: 0, hours: 24 }, { over: 2, hours: 48 }]),
+    ...seedLead(['qc', 'scn', 'rgb', 'rdb', 'lr', 'dn', 'mad', 'tsc', 'crs', 'sr', 'ckie', 'dan'], [{ over: 5, hours: 24 }, { over: 10, hours: 48 }]),
+  },
 };
 
 // ---------- Low-level helpers ----------

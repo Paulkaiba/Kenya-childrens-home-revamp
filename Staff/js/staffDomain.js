@@ -124,3 +124,29 @@ export function productionSummary(orders, date) {
 }
 
 export { LocalStorageOrderRepository, LocalStorageProductRepository, Product };
+
+// ---- Scheduling rules helpers. The manager types DAYS; the store keeps HOURS. ----
+const HOURS_PER_DAY = 24;
+const dayLabel = h => h === 0 ? 'same day' : `${h / HOURS_PER_DAY} day${h === HOURS_PER_DAY ? '' : 's'}`;
+// Lines of "more than N, D" (N items, D days of notice) -> { tiers: [{ over, hours }], errors: [badLines] }
+export function parseTiers(text) {
+  const tiers = [], errors = [];
+  text.split('\n').map(l => l.trim()).filter(Boolean).forEach(line => {
+    const parts = line.split(',').map(x => x.trim());
+    const over = Number(parts[0]), days = Number(parts[1]);
+    if (parts.length !== 2 || parts[0] === '' || parts[1] === '' || !Number.isFinite(over) || !Number.isFinite(days) || over < 0 || days < 0) errors.push(line);
+    else tiers.push({ over, hours: Math.round(days * HOURS_PER_DAY) });
+  });
+  return { tiers, errors };
+}
+export const tiersToText = tiers => (tiers || []).map(t => `${t.over}, ${t.hours / HOURS_PER_DAY}`).join('\n');
+// Plain-English summary shown under each box, e.g. "Up to 25: same day · More than 25: 1 day"
+export function describeTiers(tiers) {
+  if (!tiers || !tiers.length) return 'No advance notice needed';
+  const t = [...tiers].sort((a, b) => a.over - b.over), out = [];
+  if (t[0].over > 0) out.push(`Up to ${t[0].over}: same day`);
+  t.forEach(x => out.push(`${x.over === 0 ? 'Any amount' : 'More than ' + x.over}: ${dayLabel(x.hours)}`));
+  return out.join(' · ');
+}
+// Free text -> sorted unique 'YYYY-MM-DD' dates.
+export const parseDates = text => [...new Set(text.split(/[\s,]+/).filter(x => /^\d{4}-\d{2}-\d{2}$/.test(x)))].sort();

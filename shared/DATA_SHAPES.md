@@ -23,11 +23,12 @@ or reject with `updateOrder(serial, { cancelRequested: false })`. Cancelled orde
 
 ## Product (`kch-products`)
 `{ id, name, category: 'bread'|'cake'|'pastry', emoji, desc, ingredients[], allergens[],
-   flavours[], custom: bool (true = cake wizard), available: bool,
+   flavours[], custom: bool (true = cake wizard), soldOut: bool (visible but not orderable),
+   hidden: bool (true = customers never see it; manager still does),
    sizes: [{ id, label, price }] }`
 
 ## Rules (`kch-rules`)
-`{ lead: { bread|cake|pastry: [{ over, hours }] },   // notice hours by quantity
+`{ productLead: { productId: [{ over, hours }] },     // notice per PRODUCT: more than `over` needs `hours`. No entry = no notice
    hours: { open: 8, close: 18, closedDays: [0] },   // 0 = Sunday
    closedDates: ['YYYY-MM-DD'], dailyCapacity: 20 }`
 
