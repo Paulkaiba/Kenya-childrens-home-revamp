@@ -1,7 +1,7 @@
 // Staff-side domain logic: no DOM access, so every class is unit-testable.
 // Reuses the same order data the customer app writes (same localStorage key,
 // same origin) — this IS the shared data layer for the prototype stage.
-import { LocalStorageOrderRepository } from '../../Bakery/js/domain.js';
+import { LocalStorageOrderRepository, LocalStorageProductRepository, Product } from '../../Bakery/js/domain.js';
 
 // ---- Staff accounts & roles ----
 // Prototype-only: plain-text credentials in a hardcoded directory. Not for production —
@@ -123,4 +123,4 @@ export function productionSummary(orders, date) {
   return summary;
 }
 
-export { LocalStorageOrderRepository };
+export { LocalStorageOrderRepository, LocalStorageProductRepository, Product };

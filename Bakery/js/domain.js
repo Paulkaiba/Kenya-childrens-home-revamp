@@ -31,8 +31,8 @@ export const defaultPolicy = () => new LeadPolicy({
 // ---- Catalog: products with sizes and flavours (placeholder prices/options for now) ----
 export class Size { constructor(id, label, price) { Object.assign(this, { id, label, price }); } }
 export class Product {
-  constructor({ id, name, category, emoji, desc, ingredients = [], allergens = [], sizes, flavours = [], custom = false }) {
-    Object.assign(this, { id, name, category, emoji, desc, ingredients, allergens, flavours, custom });
+  constructor({ id, name, category, emoji, desc, ingredients = [], allergens = [], sizes, flavours = [], custom = false, soldOut = false }) {
+    Object.assign(this, { id, name, category, emoji, desc, ingredients, allergens, flavours, custom, soldOut });
     this.sizes = sizes.map(s => s instanceof Size ? s : new Size(s.id, s.label, s.price));
   }
   get fromPrice() { return Math.min(...this.sizes.map(s => s.price)); }
@@ -110,6 +110,33 @@ export const CATALOG = [
     desc: 'Flaky Danish pastry.', ingredients: ['Wheat flour', 'Butter', 'Sugar'], allergens: ['Gluten', 'Milk'],
     sizes: [{ id: 'each', label: 'Each', price: 55 }] }),
 ];
+
+// ---- Product repository: the editable, persisted catalog ----
+// CATALOG above is the seed data only. Every screen (customer menu, staff Menu
+// Management) reads through this repository instead, so a manager's edits
+// actually stick and the customer site picks them up on next load.
+export class ProductRepository {
+  constructor() { this.db = CATALOG.map(p => ProductRepository.toPlain(p)); }
+  static toPlain(p) { return { id: p.id, name: p.name, category: p.category, emoji: p.emoji, desc: p.desc, ingredients: [...p.ingredients], allergens: [...p.allergens], flavours: [...p.flavours], custom: p.custom, soldOut: p.soldOut, sizes: p.sizes.map(s => ({ id: s.id, label: s.label, price: s.price })) }; }
+  load() { return this.db; }
+  persist(db) { this.db = db; }
+  list() { return this.load().map(p => new Product(p)); }
+  get(id) { const p = this.load().find(p => p.id === id); return p ? new Product(p) : undefined; }
+  save(product) {
+    const plain = product instanceof Product ? ProductRepository.toPlain(product) : product;
+    const db = this.load(), i = db.findIndex(p => p.id === plain.id);
+    if (i >= 0) db[i] = plain; else db.push(plain);
+    this.persist(db);
+  }
+  remove(id) { this.persist(this.load().filter(p => p.id !== id)); }
+  setSoldOut(id, soldOut) { const db = this.load(), p = db.find(p => p.id === id); if (p) { p.soldOut = soldOut; this.persist(db); } }
+}
+export class LocalStorageProductRepository extends ProductRepository {
+  constructor() { super(); this._ensureSeeded(); }
+  load() { return JSON.parse(localStorage.getItem('kch-catalog') || 'null') || this.db; }
+  persist(db) { this.db = db; localStorage.setItem('kch-catalog', JSON.stringify(db)); }
+  _ensureSeeded() { if (!localStorage.getItem('kch-catalog')) this.persist(this.db); }
+}
 
 // ---- Cart: one shared cart across products, like an Uber-style checkout ----
 export class Cart {

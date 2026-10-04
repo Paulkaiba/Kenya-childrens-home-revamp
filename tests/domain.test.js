@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Cart, CATALOG, defaultPolicy, Scheduler, FixedClock, OrderService, OrderRepository, Customer, ValidationError } from '../Bakery/js/domain.js';
+import { Cart, CATALOG, defaultPolicy, Scheduler, FixedClock, OrderService, OrderRepository, Customer, ValidationError, Product, ProductRepository } from '../Bakery/js/domain.js';
 
 const byId = id => CATALOG.find(p => p.id === id);
 const wb = byId('wb'), bb = byId('bb'), ck = byId('ck'), policy = defaultPolicy();
@@ -130,4 +130,38 @@ test('cancellation needs 24 hours before pickup', () => {
   svc.cancel(far.serial);
   assert.equal(repo.get(far.serial).status, 'Cancelled');
   assert.throws(() => svc.cancel(near.serial), ValidationError);
+});
+
+test('ProductRepository seeds from CATALOG and reconstructs real Product instances', () => {
+  const repo = new ProductRepository();
+  const list = repo.list();
+  assert.equal(list.length, CATALOG.length);
+  assert.ok(list[0] instanceof Product);
+  assert.equal(list.find(p => p.id === 'wb').fromPrice, 35);
+});
+
+test('ProductRepository.save upserts: new id adds, existing id edits in place', () => {
+  const repo = new ProductRepository();
+  const before = repo.list().length;
+  repo.save(new Product({ id: 'zz', name: 'Test Bun', category: 'pastry', emoji: '🥐', desc: '', sizes: [{ id: 's', label: 'Each', price: 10 }] }));
+  assert.equal(repo.list().length, before + 1);
+  assert.equal(repo.get('zz').name, 'Test Bun');
+
+  repo.save(new Product({ id: 'zz', name: 'Renamed Bun', category: 'pastry', emoji: '🥐', desc: '', sizes: [{ id: 's', label: 'Each', price: 15 }] }));
+  assert.equal(repo.list().length, before + 1); // still just one more, not two
+  assert.equal(repo.get('zz').name, 'Renamed Bun');
+  assert.equal(repo.get('zz').size('s').price, 15);
+});
+
+test('ProductRepository.setSoldOut and remove work as expected', () => {
+  const repo = new ProductRepository();
+  repo.setSoldOut('wb', true);
+  assert.equal(repo.get('wb').soldOut, true);
+  repo.setSoldOut('wb', false);
+  assert.equal(repo.get('wb').soldOut, false);
+
+  const before = repo.list().length;
+  repo.remove('wb');
+  assert.equal(repo.list().length, before - 1);
+  assert.equal(repo.get('wb'), undefined);
 });

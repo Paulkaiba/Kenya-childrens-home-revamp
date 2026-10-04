@@ -1,4 +1,4 @@
-import { CATALOG, Cart, Customer, defaultPolicy, Scheduler, Clock, OrderService, LocalStorageOrderRepository, ValidationError } from './domain.js';
+import { Cart, Customer, defaultPolicy, Scheduler, Clock, OrderService, LocalStorageOrderRepository, LocalStorageProductRepository, ValidationError } from './domain.js';
 
 const $ = s => document.querySelector(s);
 const ksh = n => 'Ksh ' + n.toLocaleString();
@@ -36,6 +36,7 @@ class App {
   constructor() {
     const clock = new Clock();
     this.cart = new Cart(); this.policy = defaultPolicy(); this.scheduler = new Scheduler(clock);
+    this.catalog = new LocalStorageProductRepository();
     this.service = new OrderService(new LocalStorageOrderRepository(), this.scheduler, this.policy, clock);
     this.picker = new CalendarPicker(this.scheduler, (bucket, d) => { this.form.whenByBucket[bucket] = d; this.show(this.currentView); });
     this.form = { fulfilment: 'pickup', whenByBucket: {} }; this.lookup = {}; this.pending = null;
@@ -70,14 +71,15 @@ class App {
       $('#view').innerHTML = `<div class="box"><b>Something went wrong showing this page.</b><p class="sub">${err.message}</p><button class="primary" data-v="menu">Back to menu</button></div>`;
     }
   }
-  findProduct(id) { return CATALOG.find(p => p.id === id); }
+  findProduct(id) { return this.catalog.get(id); }
   dateButton(bucket, lead) {
     const picked = this.form.whenByBucket[bucket];
     return `<label>Date and time needed — ${bucketLabel(bucket)}</label><button class="ghost" data-cal="${bucket}">${picked ? when(picked) : 'Choose date and time'}</button>${lead ? `<div class="note">${bucketLabel(bucket)} need ${lead / 24} day${lead > 24 ? 's' : ''} notice.</div>` : ''}`;
   }
 
   menu() {
-    return `<h2>Menu</h2><p class="sub">Pick a product to see sizes, flavours and allergens before you order.</p><div class="cards">${CATALOG.map(p => `<div class="card"><div class="emoji">${p.emoji}</div><b>${p.name}</b><div class="price">From ${ksh(p.fromPrice)}</div><small>${p.desc}</small><button class="primary" data-order="${p.id}">Order</button></div>`).join('')}</div>`;
+    const cards = this.catalog.list().map(p => `<div class="card">${p.soldOut ? '<span class="soldout-badge">Sold out</span>' : ''}<div class="emoji">${p.emoji}</div><b>${p.name}</b><div class="price">From ${ksh(p.fromPrice)}</div><small>${p.desc}</small>${p.soldOut ? '<button class="ghost" disabled>Sold out</button>' : `<button class="primary" data-order="${p.id}">Order</button>`}</div>`).join('');
+    return `<h2>Menu</h2><p class="sub">Pick a product to see sizes, flavours and allergens before you order.</p><div class="cards">${cards}</div>`;
   }
 
   openProduct(id) {
