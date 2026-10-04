@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Cart, CATALOG, defaultPolicy, Scheduler, FixedClock, OrderService, OrderRepository, Customer, ValidationError } from '../Bakery/js/domain.js';
 
-const [wb, bb, ck] = CATALOG, policy = defaultPolicy();
+const byId = id => CATALOG.find(p => p.id === id);
+const wb = byId('wb'), bb = byId('bb'), ck = byId('ck'), policy = defaultPolicy();
 const clock = new FixedClock('2026-09-28T09:00:00'); // a Monday
 const setup = () => {
   const repo = new OrderRepository(), cart = new Cart();
@@ -20,7 +21,7 @@ test('bread lead time: 25 same-day, 26+ one day, 51+ two days, summed across pro
 test('cakes need one day, size and flavour affect price not lead time', () => {
   const c = new Cart(); c.add(ck, '2kg', 'Chocolate', 1);
   assert.equal(c.leadHoursFor('cake', policy), 24);
-  assert.equal(c.subtotal, 1200);
+  assert.equal(c.subtotal, 4400);
 });
 
 test('more than 2 cakes needs two days, 1-2 cakes still needs one day', () => {
@@ -105,9 +106,9 @@ test('a mixed cart lets cake and bread use different pickup times', () => {
 });
 
 test('pastries get their own lead time and pickup time, separate from bread', () => {
-  const [, , , cu] = CATALOG; // Cupcakes, a pastry-category product
+  const scones = byId('scn'); // a pastry-category product
   const c = new Cart();
-  c.add(cu, 'box12', 'Vanilla', 6); // over the 5-box pastry threshold -> 24h
+  c.add(scones, 'packet', '', 6); // over the 5-unit pastry threshold -> 24h
   c.add(wb, 'std', '', 1);          // bread stays same-day
   assert.equal(c.leadHoursFor('pastry', policy), 24);
   assert.equal(c.leadHoursFor('bread', policy), 0);

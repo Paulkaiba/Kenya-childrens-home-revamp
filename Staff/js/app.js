@@ -16,10 +16,13 @@ class StaffApp {
     this.filters = { status: '', category: '', date: '' };
     this.prodDate = today();
     this.prodItem = null; // { category, key } when drilled into one item
-    $('#who').textContent = `${staff.name} · ${staff.isManager ? 'Manager' : 'Baker'}`;
-    $('#role-banner').textContent = staff.isManager
-      ? 'Manager access — full visibility and controls.'
-      : 'Baker access — you can view and update orders, but not menu, rules or staff.';
+    const roleLabel = { manager: 'Manager', supervisor: 'Supervisor', baker: 'Baker' }[staff.role] || staff.role;
+    $('#who').textContent = `${staff.name} · ${roleLabel}`;
+    $('#role-banner').textContent = {
+      manager: 'Manager access — full visibility and controls.',
+      supervisor: 'Supervisor access — you can view orders and reports, but cannot change order status, menu, rules or staff.',
+      baker: 'Baker access — you can view and update orders, but not menu, rules or staff.',
+    }[staff.role] || '';
     document.querySelectorAll('.side button').forEach(b => b.addEventListener('click', () => this.go(b.dataset.v)));
     $('#logout').addEventListener('click', e => { e.preventDefault(); new AuthService(new StaffDirectory(), new LocalSessionStore()).logout(); location.href = 'index.html'; });
     document.addEventListener('click', e => this.onClick(e));
@@ -80,7 +83,7 @@ class StaffApp {
     if (!data) return `<p class="sub">This item is no longer scheduled for this date.</p><button class="ghost" data-v="production">‹ Back to Production View</button>`;
     const rows = data.entries.map(e => `<tr><td>${e.serial}</td><td>${e.customer}</td><td>×${e.qty}</td><td>${e.message ? '“' + e.message + '”' : '—'}</td>
       <td><span class="status status-${e.status}">${e.status}</span></td>
-      <td>${nextStatus(e.status) ? `<button class="ghost" data-lineadvance="${e.serial}|${e.lineId}">Mark ${nextStatus(e.status)}</button>` : ''}</td></tr>`).join('');
+      <td>${this.staff.canUpdateStatus && nextStatus(e.status) ? `<button class="ghost" data-lineadvance="${e.serial}|${e.lineId}">Mark ${nextStatus(e.status)}</button>` : ''}</td></tr>`).join('');
     return `<button class="ghost" data-v="production">‹ Back to Production View</button>
       <h2>${key}</h2><p class="sub">${data.qty} total needed on ${this.prodDate}.</p>
       <div class="box table-wrap"><table><tr><th>Serial</th><th>Customer</th><th>Qty</th><th>Specification</th><th>Status</th><th></th></tr>${rows}</table></div>`;

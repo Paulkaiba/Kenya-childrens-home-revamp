@@ -166,16 +166,16 @@ class App {
 
   checkout() {
     if (this.cart.isEmpty) return this.cartScreen();
-    const f = this.form, fee = f.fulfilment === 'delivery' ? OrderService.DELIVERY_FEE : 0;
+    const f = this.form, isDelivery = f.fulfilment === 'delivery';
     const rows = this.cart.lines.map(l => `<div class="row"><span>${l.product.name} (${l.size.label}${l.flavour ? ', ' + l.flavour : ''})${l.message ? ' — “' + l.message + '”' : ''} ×${l.qty}</span><span>${ksh(l.qty * l.size.price)} <button class="icon-btn" data-remove="${l.key}" title="Remove item" aria-label="Remove item">🗑</button></span></div>`).join('');
     return `<h2>Pre-order form</h2><p class="sub">Add your details and choose when you need the order.</p><button class="ghost" data-v="cart">‹ Back to cart</button><div class="two"><div class="box">
       <label>Full name</label><input name="name" value="${f.name || ''}">
       <div class="two"><div><label>Phone (M-Pesa)</label><input name="phone" placeholder="07XX XXX XXX" value="${f.phone || ''}"></div><div><label>Email</label><input name="email" value="${f.email || ''}"></div></div>
-      <label>Pickup or delivery</label><div class="choice"><label><input type="radio" name="fulfilment" value="pickup" ${fee ? '' : 'checked'}> Pickup, free</label><label><input type="radio" name="fulfilment" value="delivery" ${fee ? 'checked' : ''}> Delivery, Ksh 100</label></div>
-      ${fee ? `<label>Delivery location</label><input name="location" placeholder="Estate, street, landmark" value="${f.location || ''}">` : ''}
+      <label>Pickup or delivery</label><div class="choice"><label><input type="radio" name="fulfilment" value="pickup" ${isDelivery ? '' : 'checked'}> Pickup</label><label><input type="radio" name="fulfilment" value="delivery" ${isDelivery ? 'checked' : ''}> Delivery — price agreed with you after ordering</label></div>
+      ${isDelivery ? `<label>Delivery location</label><input name="location" placeholder="Estate, street, landmark" value="${f.location || ''}">` : ''}
       ${this.cart.buckets.map(b => this.dateButton(b, this.cart.leadHoursFor(b, this.policy))).join('')}
       <label>Notes</label><textarea name="notes">${f.notes || ''}</textarea><ul id="errors"></ul></div>
-      <div class="box"><b>Order summary</b>${rows}${fee ? `<div class="row"><span>Delivery</span><span>${ksh(fee)}</span></div>` : ''}<div class="row total"><span>Total</span><span>${ksh(this.cart.subtotal + fee)}</span></div><button class="primary" data-place>Place order via M-Pesa</button></div></div>`;
+      <div class="box"><b>Order summary</b>${rows}<div class="row total"><span>Total</span><span>${ksh(this.cart.subtotal)}</span></div>${isDelivery ? '<p class="sub">Delivery fee is not included — our manager will contact you by SMS/WhatsApp to agree a delivery price.</p>' : ''}<button class="primary" data-place>Place order via M-Pesa</button></div></div>`;
   }
 
   place() {
@@ -192,12 +192,14 @@ class App {
 
   done() {
     const o = this.order;
-    return `<div class="box receipt"><div class="emoji">✅</div><h2>Order confirmed</h2><div class="sub">An M-Pesa prompt is sent to ${o.customer.phone} (simulated in this prototype).</div><div class="serial">${o.serial}</div>${o.lines.map(l => `<div class="row"><span>${l.name} (${l.size}${l.flavour ? ', ' + l.flavour : ''})${l.message ? ' — “' + l.message + '”' : ''} ×${l.qty}</span><span>${ksh(l.qty * l.price)}</span></div>`).join('')}<div class="row total"><span>Total</span><span>${ksh(o.total)}</span></div>${Object.entries(o.pickups).map(([b, t]) => `<div class="row"><span>${bucketLabel(b)} — ${o.fulfilment === 'delivery' ? 'Delivery to ' + o.location : 'Pickup'}</span><span>${when(t)}</span></div>`).join('')}<p class="sub">Keep this serial number. Use it with your phone and email to find your order.</p><button class="ghost" data-print>Print receipt</button> <button class="primary" data-v="menu">New order</button></div>`;
+    const deliveryNote = o.fulfilment === 'delivery'
+      ? `<div class="note">An SMS has been sent to ${o.customer.phone} with a WhatsApp link to agree your delivery price with the bakery (simulated in this prototype).</div>` : '';
+    return `<div class="box receipt"><div class="emoji">✅</div><h2>Order confirmed</h2><div class="sub">An M-Pesa prompt is sent to ${o.customer.phone} (simulated in this prototype). Payment is required to confirm the order.</div><div class="serial">${o.serial}</div>${o.lines.map(l => `<div class="row"><span>${l.name} (${l.size}${l.flavour ? ', ' + l.flavour : ''})${l.message ? ' — “' + l.message + '”' : ''} ×${l.qty}</span><span>${ksh(l.qty * l.price)}</span></div>`).join('')}<div class="row total"><span>Total</span><span>${ksh(o.total)}</span></div>${Object.entries(o.pickups).map(([b, t]) => `<div class="row"><span>${bucketLabel(b)} — ${o.fulfilment === 'delivery' ? 'Delivery to ' + o.location : 'Pickup'}</span><span>${when(t)}</span></div>`).join('')}${deliveryNote}<p class="sub">Keep this serial number. Use it with your phone and email to find your order. To cancel, call us at least a day before pickup — note that we do not offer refunds.</p><button class="ghost" data-print>Print receipt</button> <button class="primary" data-v="menu">New order</button></div>`;
   }
 
   orders() {
     const l = this.lookup, found = l.lphone && l.lemail ? this.service.repo.find(l.lphone, l.lemail) : null;
-    const table = found && (found.length ? `<table><tr><th>Serial</th><th>Earliest</th><th>Total</th><th>Status</th><th></th></tr>${found.map(o => `<tr><td>${o.serial}</td><td>${when(o.when)}</td><td>${ksh(o.total)}</td><td>${o.status}</td><td>${o.status === 'Received' ? `<button class="ghost" data-cancel="${o.serial}">Cancel</button>` : ''}</td></tr>`).join('')}</table>` : '<p class="sub">No orders found for these details.</p>');
+    const table = found && (found.length ? `<table><tr><th>Serial</th><th>Earliest</th><th>Total</th><th>Status</th></tr>${found.map(o => `<tr><td>${o.serial}</td><td>${when(o.when)}</td><td>${ksh(o.total)}</td><td>${o.status}</td></tr>`).join('')}</table><p class="sub">To cancel an order, call us at least a day before pickup. We do not offer refunds.</p>` : '<p class="sub">No orders found for these details.</p>');
     return `<h2>My orders</h2><p class="sub">Enter the phone number and email you ordered with.</p><div class="box"><div class="two"><div><label>Phone</label><input name="lphone" value="${l.lphone || ''}"></div><div><label>Email</label><input name="lemail" value="${l.lemail || ''}"></div></div><p></p><button class="primary" data-find>Find my orders</button></div>${table ? `<div class="box">${table}</div>` : ''}`;
   }
 
@@ -222,7 +224,6 @@ class App {
     }
     else if (d.place !== undefined) this.place();
     else if (d.find !== undefined) { this.lookup = { lphone: this.form.lphone, lemail: this.form.lemail }; this.show('orders'); }
-    else if (d.cancel) { try { this.service.cancel(d.cancel); } catch (x) { alert(x.message); } this.show('orders'); }
     else if (d.print !== undefined) window.print();
     else if (d.close !== undefined) this.picker.close();
   }
