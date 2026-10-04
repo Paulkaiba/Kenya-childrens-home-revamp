@@ -228,3 +228,101 @@ export function describeTiers(tiers) {
 }
 // Free text -> sorted unique 'YYYY-MM-DD' dates.
 export const parseDates = text => [...new Set(text.split(/[\s,]+/).filter(x => /^\d{4}-\d{2}-\d{2}$/.test(x)))].sort();
+// =====================================================================
+// ---- Reports and notifications (paste at the very bottom of staffDomain.js) ----
+// Pure functions, no DOM: unit-tested in tests/reports.test.js.
+// =====================================================================
+const pad2 = n => String(n).padStart(2, '0');
+// Local calendar day as 'YYYY-MM-DD' (what staff mean by "today", unlike toISOString which is UTC).
+export const localDay = d => { const x = new Date(d); return `${x.getFullYear()}-${pad2(x.getMonth() + 1)}-${pad2(x.getDate())}`; };
+
+// One row per order line inside the date range.
+// basis 'ordered' = the day the customer placed the order; 'pickup' = the day that line is collected.
+export function reportRows(orders, { from = '', to = '', basis = 'ordered' } = {}) {
+  const rows = [];
+  orders.forEach(o => (o.lines || []).forEach(l => {
+    const pickup = o.pickups?.[l.bucket] || null;
+    const dateIso = basis === 'pickup' ? pickup : o.createdAt;
+    if (!dateIso) return;
+    const day = localDay(dateIso);
+    if (from && day < from) return;
+    if (to && day > to) return;
+    rows.push({
+      serial: o.serial, day,
+      orderedDay: o.createdAt ? localDay(o.createdAt) : '',
+      pickupDay: pickup ? localDay(pickup) : '',
+      customer: o.customer?.name || '', phone: o.customer?.phone || '',
+      fulfilment: o.fulfilment || 'pickup',
+      item: `${l.name} (${l.size}${l.flavour ? ', ' + l.flavour : ''})`,
+      name: l.name, category: l.bucket, qty: l.qty, unitPrice: l.price, total: l.qty * l.price,
+      status: o.status === 'Cancelled' ? 'Cancelled' : (l.status || 'Received'),
+    });
+  }));
+  return rows;
+}
+
+// Summary figures for the Reports page. Cancelled items never count towards sales.
+// Revenue = quantity x listed price; delivery fees are agreed separately and are not included.
+export function buildReport(orders, opts = {}) {
+  const rows = reportRows(orders, opts);
+  const live = rows.filter(r => r.status !== 'Cancelled');
+  const liveSerials = new Set(live.map(r => r.serial));
+  const cancelled = new Set(rows.filter(r => r.status === 'Cancelled' && !liveSerials.has(r.serial)).map(r => r.serial));
+  const revenue = live.reduce((s, r) => s + r.total, 0);
+  const items = live.reduce((s, r) => s + r.qty, 0);
+  const orderCount = liveSerials.size;
+  const fulfilment = new Map(live.map(r => [r.serial, r.fulfilment]));
+  const delivery = [...fulfilment.values()].filter(f => f === 'delivery').length;
+
+  const byCategory = { bread: { qty: 0, revenue: 0 }, cake: { qty: 0, revenue: 0 }, pastry: { qty: 0, revenue: 0 } };
+  live.forEach(r => { const c = byCategory[r.category] || (byCategory[r.category] = { qty: 0, revenue: 0 }); c.qty += r.qty; c.revenue += r.total; });
+
+  const byStatus = Object.fromEntries(STATUS_FLOW.map(s => [s, 0]));
+  live.forEach(r => { byStatus[r.status] = (byStatus[r.status] || 0) + r.qty; });
+
+  const prod = new Map();
+  live.forEach(r => { const p = prod.get(r.name) || { name: r.name, qty: 0, revenue: 0 }; p.qty += r.qty; p.revenue += r.total; prod.set(r.name, p); });
+  const topProducts = [...prod.values()].sort((a, b) => b.revenue - a.revenue || b.qty - a.qty).slice(0, 8);
+
+  const days = new Map();
+  live.forEach(r => { const d = days.get(r.day) || { day: r.day, serials: new Set(), revenue: 0 }; d.serials.add(r.serial); d.revenue += r.total; days.set(r.day, d); });
+  const byDay = [...days.values()].map(d => ({ day: d.day, orders: d.serials.size, revenue: d.revenue })).sort((a, b) => a.day.localeCompare(b.day));
+
+  return {
+    rows,
+    totals: { orders: orderCount, items, revenue, avgOrder: orderCount ? Math.round(revenue / orderCount) : 0, cancelled: cancelled.size, delivery, pickup: orderCount - delivery },
+    byCategory, byStatus, topProducts, byDay,
+  };
+}
+
+// CSV (opens in Excel): one line per order item.
+export function rowsToCsv(rows) {
+  const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const head = ['Order', 'Date ordered', 'Pickup date', 'Customer', 'Phone', 'Fulfilment', 'Item', 'Category', 'Qty', 'Unit price', 'Line total', 'Status'];
+  const lines = rows.map(r => [r.serial, r.orderedDay, r.pickupDay, r.customer, r.phone, r.fulfilment, r.item, r.category, r.qty, r.unitPrice, r.total, r.status]);
+  return [head, ...lines].map(l => l.map(q).join(',')).join('\r\n');
+}
+
+// What the bell shows. Worked out from the orders and products that already exist, so there is nothing
+// extra to store. rank: lower = more urgent (cancellation requests first, then new orders, pickups today, sold out).
+export function buildNotifications(orders, products = [], now = new Date()) {
+  const out = [], today = localDay(now);
+  orders.forEach(o => {
+    if (o.status === 'Cancelled') return;
+    const lines = o.lines || [], who = o.customer?.name || 'Customer';
+    if (o.cancelRequested) {
+      out.push({ id: `cancel:${o.serial}`, type: 'cancel', rank: 0, title: 'Cancellation requested', detail: `${o.serial} · ${who}`, at: o.updatedAt || o.createdAt, view: 'queue' });
+    } else if (lines.length && lines.every(l => (l.status || 'Received') === 'Received')) {
+      out.push({ id: `new:${o.serial}`, type: 'new', rank: 1, title: 'New order', detail: `${o.serial} · ${who} · ${lines.length} item${lines.length === 1 ? '' : 's'}`, at: o.createdAt, view: 'queue' });
+    }
+    Object.entries(o.pickups || {}).forEach(([bucket, iso]) => {
+      if (localDay(iso) !== today) return;
+      const mine = lines.filter(l => l.bucket === bucket && l.status !== 'Cancelled');
+      if (!mine.length || mine.every(l => l.status === 'Collected')) return;
+      out.push({ id: `today:${o.serial}:${bucket}:${today}`, type: 'pickup', rank: 2, title: `Pickup today (${bucket})`, detail: `${o.serial} · ${who}`, at: iso, view: 'queue' });
+    });
+  });
+  products.filter(p => p.soldOut).forEach(p =>
+    out.push({ id: `soldout:${p.id}`, type: 'soldout', rank: 3, title: 'Marked sold out', detail: p.name, at: null, view: 'menu', managerOnly: true }));
+  return out.sort((a, b) => a.rank - b.rank || new Date(b.at || 0) - new Date(a.at || 0)).slice(0, 40);
+}
