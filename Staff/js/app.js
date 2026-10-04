@@ -1,4 +1,4 @@
-import { StaffDirectory, AuthService, LocalSessionStore, LocalStorageOrderRepository, flattenLines, filterLines, nextStatus, productionSummary, STATUS_FLOW } from './staffDomain.js';
+import { StaffDirectory, AuthService, LocalSessionStore, LocalStorageOrderRepository, LocalStorageProductRepository, Product, flattenLines, filterLines, nextStatus, productionSummary, STATUS_FLOW } from './staffDomain.js';
 
 const $ = s => document.querySelector(s);
 const ksh = n => 'Ksh ' + n.toLocaleString();
@@ -13,13 +13,19 @@ class StaffApp {
   constructor(staff) {
     this.staff = staff;
     this.repo = new LocalStorageOrderRepository();
+    this.catalog = new LocalStorageProductRepository();
     this.filters = { status: '', category: '', date: '' };
     this.prodDate = today();
     this.prodItem = null; // { category, key } when drilled into one item
-    $('#who').textContent = `${staff.name} · ${staff.isManager ? 'Manager' : 'Baker'}`;
-    $('#role-banner').textContent = staff.isManager
-      ? 'Manager access — full visibility and controls.'
-      : 'Baker access — you can view and update orders, but not menu, rules or staff.';
+    this.editingProduct = null; // product id currently expanded for editing, or 'new'
+    const roleLabel = { manager: 'Manager', supervisor: 'Supervisor', baker: 'Baker' }[staff.role] || staff.role;
+    $('#who').textContent = `${staff.name} · ${roleLabel}`;
+    $('#role-banner').textContent = {
+      manager: 'Manager access — full visibility and controls.',
+      supervisor: 'Supervisor access — you can view orders and reports, but cannot change order status, menu, rules or staff.',
+      baker: 'Baker access — you can view and update orders, but not menu, rules or staff.',
+    }[staff.role] || '';
+    if (staff.isManager) { const mb = document.querySelector('[data-v="menu"]'); mb.classList.remove('locked'); mb.textContent = 'Menu Management'; }
     document.querySelectorAll('.side button').forEach(b => b.addEventListener('click', () => this.go(b.dataset.v)));
     $('#logout').addEventListener('click', e => { e.preventDefault(); new AuthService(new StaffDirectory(), new LocalSessionStore()).logout(); location.href = 'index.html'; });
     document.addEventListener('click', e => this.onClick(e));
@@ -80,10 +86,72 @@ class StaffApp {
     if (!data) return `<p class="sub">This item is no longer scheduled for this date.</p><button class="ghost" data-v="production">‹ Back to Production View</button>`;
     const rows = data.entries.map(e => `<tr><td>${e.serial}</td><td>${e.customer}</td><td>×${e.qty}</td><td>${e.message ? '“' + e.message + '”' : '—'}</td>
       <td><span class="status status-${e.status}">${e.status}</span></td>
-      <td>${nextStatus(e.status) ? `<button class="ghost" data-lineadvance="${e.serial}|${e.lineId}">Mark ${nextStatus(e.status)}</button>` : ''}</td></tr>`).join('');
+      <td>${this.staff.canUpdateStatus && nextStatus(e.status) ? `<button class="ghost" data-lineadvance="${e.serial}|${e.lineId}">Mark ${nextStatus(e.status)}</button>` : ''}</td></tr>`).join('');
     return `<button class="ghost" data-v="production">‹ Back to Production View</button>
       <h2>${key}</h2><p class="sub">${data.qty} total needed on ${this.prodDate}.</p>
       <div class="box table-wrap"><table><tr><th>Serial</th><th>Customer</th><th>Qty</th><th>Specification</th><th>Status</th><th></th></tr>${rows}</table></div>`;
+  }
+
+  // ---- Menu Management (manager only, enforced in go()) ----
+  menu() {
+    const products = this.catalog.list();
+    const rows = products.map(p => this.editingProduct === p.id ? this.productForm(p) : `
+      <div class="box product-row">
+        <div class="product-row-head">
+          <div><b>${p.emoji} ${p.name}</b> <span class="sub">(${p.category})</span></div>
+          <label class="sub"><input type="checkbox" data-soldout="${p.id}" ${p.soldOut ? 'checked' : ''}> Sold out</label>
+        </div>
+        ${p.sizes.map(s => `<div class="row"><span>${s.label}</span><span>${ksh(s.price)}</span></div>`).join('')}
+        ${p.flavours.length ? `<p class="sub">Flavours: ${p.flavours.join(', ')}</p>` : ''}
+        <button class="ghost" data-editproduct="${p.id}">Edit</button>
+        <button class="ghost" data-deleteproduct="${p.id}">Delete</button>
+      </div>`).join('');
+    return `<h2>Menu Management</h2><p class="sub">Add, edit, price and sell out products — changes appear on the customer site immediately.</p>
+      ${this.editingProduct === 'new' ? this.productForm(null) : `<button class="primary" data-newproduct>+ Add new product</button>`}
+      ${rows}`;
+  }
+
+  productForm(p) {
+    const id = p?.id || '';
+    const sizes = p?.sizes || [{ id: 'std', label: 'Standard', price: 0 }];
+    return `<div class="box product-form">
+      <b>${p ? 'Edit product' : 'New product'}</b>
+      <label>Name</label><input data-pf="name" value="${p?.name || ''}">
+      <div class="two"><div><label>Emoji</label><input data-pf="emoji" value="${p?.emoji || '🍞'}"></div>
+      <div><label>Category</label><select data-pf="category"><option value="bread" ${p?.category === 'bread' ? 'selected' : ''}>bread</option><option value="cake" ${p?.category === 'cake' ? 'selected' : ''}>cake</option><option value="pastry" ${!p || p.category === 'pastry' ? 'selected' : ''}>pastry</option></select></div></div>
+      <label>Description</label><input data-pf="desc" value="${p?.desc || ''}">
+      <label>Ingredients (comma-separated)</label><input data-pf="ingredients" value="${(p?.ingredients || []).join(', ')}">
+      <label>Allergens (comma-separated)</label><input data-pf="allergens" value="${(p?.allergens || []).join(', ')}">
+      <label>Flavours (comma-separated, leave blank if none)</label><input data-pf="flavours" value="${(p?.flavours || []).join(', ')}">
+      <label><input type="checkbox" data-pf="custom" ${p?.custom ? 'checked' : ''}> Needs the multi-cake wizard (size/flavour/message per unit)</label>
+      <label>Sizes (one per line: label, price)</label>
+      <textarea data-pf="sizes" rows="3">${sizes.map(s => `${s.label}, ${s.price}`).join('\n')}</textarea>
+      <p></p><button class="primary" data-saveproduct="${id}">Save</button> <button class="ghost" data-canceledit>Cancel</button>
+    </div>`;
+  }
+
+  saveProductForm(existingId) {
+    const f = s => document.querySelector(`[data-pf="${s}"]`);
+    const name = f('name').value.trim();
+    if (!name) { alert('Name is required.'); return; }
+    const id = existingId || name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || `p${Date.now()}`;
+    const sizes = f('sizes').value.split('\n').map(l => l.trim()).filter(Boolean).map((l, i) => {
+      const [label, price] = l.split(',').map(x => x.trim());
+      return { id: `s${i}`, label: label || `Size ${i + 1}`, price: Number(price) || 0 };
+    });
+    if (!sizes.length) { alert('Add at least one size.'); return; }
+    const existing = this.catalog.get(id);
+    const product = new Product({
+      id, name, emoji: f('emoji').value.trim() || '🍞', category: f('category').value,
+      desc: f('desc').value.trim(),
+      ingredients: f('ingredients').value.split(',').map(x => x.trim()).filter(Boolean),
+      allergens: f('allergens').value.split(',').map(x => x.trim()).filter(Boolean),
+      flavours: f('flavours').value.split(',').map(x => x.trim()).filter(Boolean),
+      custom: f('custom').checked, soldOut: existing?.soldOut || false, sizes,
+    });
+    this.catalog.save(product);
+    this.editingProduct = null;
+    this.show('menu');
   }
 
   onClick(e) {
@@ -95,11 +163,17 @@ class StaffApp {
       this.show('item');
     }
     else if (d.cancel) { if (confirm(`Cancel order ${d.cancel}? This cancels every item in it.`)) { this.repo.cancelOrder(d.cancel); this.show('queue'); } }
+    else if (d.newproduct !== undefined) { this.editingProduct = 'new'; this.show('menu'); }
+    else if (d.editproduct) { this.editingProduct = d.editproduct; this.show('menu'); }
+    else if (d.canceledit !== undefined) { this.editingProduct = null; this.show('menu'); }
+    else if (d.saveproduct !== undefined) { this.saveProductForm(d.saveproduct || null); }
+    else if (d.deleteproduct) { if (confirm(`Delete this product from the menu? This cannot be undone.`)) { this.catalog.remove(d.deleteproduct); this.show('menu'); } }
     else if (d.v) this.show(d.v);
   }
   onChange(e) {
     if (e.target.dataset.filter) { this.filters[e.target.dataset.filter] = e.target.value; this.show('queue'); }
     else if (e.target.id === 'prod-date') { this.prodDate = e.target.value; this.show('production'); }
+    else if (e.target.dataset.soldout) { this.catalog.setSoldOut(e.target.dataset.soldout, e.target.checked); this.show('menu'); }
   }
 }
 

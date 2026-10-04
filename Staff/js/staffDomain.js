@@ -1,7 +1,7 @@
 // Staff-side domain logic: no DOM access, so every class is unit-testable.
 // Reuses the same order data the customer app writes (same localStorage key,
 // same origin) — this IS the shared data layer for the prototype stage.
-import { LocalStorageOrderRepository } from '../../Bakery/js/domain.js';
+import { LocalStorageOrderRepository, LocalStorageProductRepository, Product } from '../../Bakery/js/domain.js';
 
 // ---- Staff accounts & roles ----
 // Prototype-only: plain-text credentials in a hardcoded directory. Not for production —
@@ -12,15 +12,22 @@ export class Staff {
     this._password = password;
   }
   get isManager() { return this.role === 'manager'; }
+  // Supervisor can see everything a baker sees, but cannot change an order's status —
+  // per the stakeholder, supervisors view orders/reports only.
+  get canUpdateStatus() { return this.role === 'manager' || this.role === 'baker'; }
   checkPassword(p) { return this._password === p; }
 }
 
 export class StaffDirectory {
   constructor(staff = StaffDirectory.seed()) { this.staff = staff; }
+  // Real staff: 2 managers, 1 supervisor, 1 baker. 10 username slots are reserved
+  // in the directory below for future hires — just add more entries as needed.
   static seed() {
     return [
       new Staff({ id: 1, name: 'Amina Wafula', username: 'amina', password: 'manager123', role: 'manager' }),
-      new Staff({ id: 2, name: 'Peter Otieno', username: 'peter', password: 'baker123', role: 'baker' }),
+      new Staff({ id: 2, name: 'Manager Two', username: 'manager2', password: 'manager123', role: 'manager' }),
+      new Staff({ id: 3, name: 'Supervisor', username: 'supervisor', password: 'super123', role: 'supervisor' }),
+      new Staff({ id: 4, name: 'Peter Otieno', username: 'peter', password: 'baker123', role: 'baker' }),
     ];
   }
   find(username) { return this.staff.find(s => s.username.toLowerCase() === username.trim().toLowerCase()); }
@@ -35,7 +42,7 @@ export class AuthService {
     // isManager is stored as plain data, not relied on as a getter — a getter doesn't
     // survive the JSON round-trip through localStorage, which caused manager accounts
     // to come back looking like bakers after login.
-    this.session.set({ id: staff.id, name: staff.name, username: staff.username, role: staff.role, isManager: staff.isManager });
+    this.session.set({ id: staff.id, name: staff.name, username: staff.username, role: staff.role, isManager: staff.isManager, canUpdateStatus: staff.canUpdateStatus });
     return staff;
   }
   logout() { this.session.clear(); }
@@ -116,4 +123,4 @@ export function productionSummary(orders, date) {
   return summary;
 }
 
-export { LocalStorageOrderRepository };
+export { LocalStorageOrderRepository, LocalStorageProductRepository, Product };
