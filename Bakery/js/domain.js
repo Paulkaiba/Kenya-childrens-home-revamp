@@ -1,7 +1,7 @@
 // Pure domain logic: no DOM access, so every class can be unit-tested in Node.
 // Data (products, rules, orders) now lives in ../../shared/store.js so the
 // customer app and the staff app read and write the same thing.
-import { DEFAULT_PRODUCTS, getProducts, loadDb, saveDb, localYmd } from '../../shared/store.js';
+import { getProducts, loadDb, saveDb, localYmd } from '../../shared/store.js';
 
 const H = 36e5;
 
@@ -47,8 +47,35 @@ export class Product {
   size(id) { return this.sizes.find(s => s.id === id) || this.sizes[0]; }
 }
 const toProducts = list => list.filter(p => p.available !== false).map(p => new Product(p));
-export const CATALOG = toProducts(DEFAULT_PRODUCTS);          // static copy, kept for tests
 export const getCatalog = () => toProducts(getProducts());    // live shared data, used by the app
+
+// FROZEN TEST FIXTURE. tests/domain.test.js picks products from CATALOG by position and
+// asserts exact prices, so this list must keep this order and these numbers.
+// The real menu lives in shared/store.js (DEFAULT_PRODUCTS) and is read with getCatalog().
+export const CATALOG = [
+  new Product({ id: 'wb', name: 'White Bread', category: 'bread', emoji: '🍞',
+    desc: 'Soft daily-baked white loaf.', ingredients: ['Wheat flour', 'Yeast', 'Sugar', 'Salt', 'Milk'], allergens: ['Gluten', 'Milk'],
+    sizes: [{ id: 'std', label: 'Standard loaf', price: 80 }] }),
+  new Product({ id: 'bb', name: 'Brown Bread', category: 'bread', emoji: '🍞',
+    desc: 'Wholemeal loaf, lightly sweetened.', ingredients: ['Wheat flour', 'Whole wheat', 'Yeast', 'Sugar', 'Salt'], allergens: ['Gluten'],
+    sizes: [{ id: 'std', label: 'Standard loaf', price: 90 }] }),
+  new Product({ id: 'ck', name: 'Celebration Cake', category: 'cake', emoji: '🎂', custom: true,
+    desc: 'Vanilla or chocolate sponge, iced to order. Choose the size, flavour and message for each cake.',
+    ingredients: ['Wheat flour', 'Eggs', 'Butter', 'Sugar', 'Milk'], allergens: ['Gluten', 'Eggs', 'Milk'],
+    flavours: ['Vanilla', 'Chocolate', 'Red velvet', 'Marble'],
+    sizes: [{ id: '1kg', label: '1 kg (8–10 people)', price: 650 }, { id: '2kg', label: '2 kg (16–20 people)', price: 1200 }, { id: '3kg', label: '3 kg (24–30 people)', price: 1700 }] }),
+  new Product({ id: 'cu', name: 'Cupcakes', category: 'pastry', emoji: '🧁',
+    desc: 'Boxed cupcakes, sold by the dozen.', ingredients: ['Wheat flour', 'Eggs', 'Butter', 'Sugar'], allergens: ['Gluten', 'Eggs', 'Milk'],
+    flavours: ['Vanilla', 'Chocolate', 'Red velvet'],
+    sizes: [{ id: 'box12', label: 'Box of 12', price: 480 }] }),
+  new Product({ id: 'pp', name: 'Pastry Pack', category: 'pastry', emoji: '🥐',
+    desc: 'Mixed savoury and sweet pastries.', ingredients: ['Wheat flour', 'Butter', 'Eggs'], allergens: ['Gluten', 'Eggs', 'Milk'],
+    sizes: [{ id: 'box6', label: 'Box of 6', price: 220 }] }),
+  new Product({ id: 'sc', name: 'Slice Cake Box', category: 'pastry', emoji: '🍰',
+    desc: 'Pre-cut cake slices, boxed.', ingredients: ['Wheat flour', 'Eggs', 'Butter', 'Sugar'], allergens: ['Gluten', 'Eggs', 'Milk'],
+    flavours: ['Vanilla', 'Chocolate'],
+    sizes: [{ id: 'box6', label: 'Box of 6', price: 350 }] }),
+];
 
 // ---- Cart: one shared cart across products, like an Uber-style checkout ----
 export class Cart {
