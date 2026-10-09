@@ -95,7 +95,7 @@ tests/     Unit tests
 Next steps:
 - [ ] Connect a database so orders, products and staff accounts are stored on a server
 - [ ] Hash staff passwords and add server-side authentication
-- [ ] Deploy the customer and staff website
+- [ ] Deploy the customer and staff apps
 
 ## Team
 
