@@ -1,27 +1,60 @@
 <!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>KCH Bakery — Staff Login</title>
+<title>KCH Bakery — Staff Sign in</title>
 <link rel="icon" href="../assets/logo.png">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../Styles/Bakery/bakery.css">
 <link rel="stylesheet" href="../Styles/Staff/staff.css"></head>
-<body><div class="login-wrap"><div class="box login-box">
-  <h2>KCH Bakery — Staff</h2>
-  <p class="sub">Sign in to manage orders and production.</p>
-  <label>Username</label><input id="u" placeholder="e.g. amina">
-  <label>Password</label><input id="p" type="password">
-  <p></p><button class="primary" id="go" style="width:100%">Sign in</button>
-  <p id="err" class="sub" style="color:#c00"></p>
-  <p class="sub" style="margin-top:18px">Demo accounts — manager: amina / manager123 &nbsp;·&nbsp; baker: peter / baker123</p>
-</div></div>
+<body class="login-body">
+<main class="login-split">
+  <section class="login-art">
+    <div class="art-logo"><img src="../assets/logo.png" alt="" onerror="this.remove()"><span>Kenya Children's Homes</span></div>
+    <div class="art-copy">
+      <h1>Kelvin Loaf Bakery<br>Staff area</h1>
+      <p>Everything the team needs to bake, track and serve every order, in one place.</p>
+      <ul class="art-points">
+        <li><span>📋</span> Track every order item from received to collected</li>
+        <li><span>🧁</span> Know exactly what to bake each day</li>
+        <li><span>📊</span> See sales at a glance (managers)</li>
+      </ul>
+    </div>
+  </section>
+  <section class="login-panel">
+    <div class="login-card">
+      <h2>Welcome back</h2>
+      <p class="sub">Sign in to manage orders and production.</p>
+      <label for="u">Username</label><input id="u" placeholder="e.g. amina" autocomplete="username" autocapitalize="off">
+      <label for="p">Password</label>
+      <div class="pw-wrap"><input id="p" type="password" autocomplete="current-password"><button type="button" class="pw-toggle" id="showpw">Show</button></div>
+      <button class="primary" id="go">Sign in</button>
+      <p id="err" class="login-err" role="alert"></p>
+      <div class="demo">
+        <p>Demo accounts for this prototype. Tap one to fill the form.</p>
+        <div class="demo-chips">
+          <button type="button" class="chip" data-fill="amina|manager123">Manager</button>
+          <button type="button" class="chip" data-fill="supervisor|super123">Supervisor</button>
+          <button type="button" class="chip" data-fill="peter|baker123">Baker</button>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
 <script type="module">
   import { LocalStaffDirectory, AuthService, LocalSessionStore, AuthError } from './js/staffDomain.js';
   const auth = new AuthService(new LocalStaffDirectory(), new LocalSessionStore());
   if (auth.current()) location.href = 'dashboard.html';
+  const $ = id => document.getElementById(id);
   const go = () => {
-    try { auth.login(document.getElementById('u').value, document.getElementById('p').value); location.href = 'dashboard.html'; }
-    catch (e) { if (e instanceof AuthError) document.getElementById('err').textContent = e.message; else throw e; }
+    try { auth.login($('u').value, $('p').value); location.href = 'dashboard.html'; }
+    catch (e) { if (e instanceof AuthError) $('err').textContent = e.message; else throw e; }
   };
-  document.getElementById('go').addEventListener('click', go);
-  document.getElementById('p').addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+  $('go').addEventListener('click', go);
+  ['u', 'p'].forEach(id => $(id).addEventListener('keydown', e => { if (e.key === 'Enter') go(); }));
+  $('showpw').addEventListener('click', () => {
+    const p = $('p'), show = p.type === 'password';
+    p.type = show ? 'text' : 'password'; $('showpw').textContent = show ? 'Hide' : 'Show';
+  });
+  document.querySelectorAll('[data-fill]').forEach(b => b.addEventListener('click', () => {
+    const [u, p] = b.dataset.fill.split('|'); $('u').value = u; $('p').value = p; $('err').textContent = ''; $('p').focus();
+  }));
 </script></body></html>

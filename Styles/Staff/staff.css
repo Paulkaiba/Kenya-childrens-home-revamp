@@ -1,10 +1,36 @@
 /* KCH Bakery: staff area. Loaded AFTER bakery.css, so it reuses the same brand tokens
    (--kch-primary, --kch-heading, --kch-line ...) and only adds what the staff side needs. */
 
-/* ---- Login ---- */
-.login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle at 20% 10%,#fee2e2 0,transparent 45%),radial-gradient(circle at 85% 90%,#fde8d0 0,transparent 40%),var(--kch-soft)}
-.login-box{width:min(390px,92vw);box-shadow:0 18px 40px rgba(15,23,42,.12);border-radius:14px;padding:28px}
-.login-box h2{font-size:22px}
+/* ---- Login: photo panel on the left, sign-in card on the right ---- */
+.login-body{background:var(--kch-soft)}
+.login-split{min-height:100vh;display:grid;grid-template-columns:1.1fr .9fr}
+.login-art{position:relative;color:#fff;display:flex;flex-direction:column;justify-content:flex-end;padding:48px;overflow:hidden;
+  background:linear-gradient(160deg,rgba(15,23,42,.30) 0%,rgba(184,21,27,.90) 100%),url('../../assets/site/cake-waves.jpg') center/cover,#B8151B}
+.art-logo{position:absolute;top:32px;left:40px;display:flex;align-items:center;gap:10px;font-weight:800;font-size:17px}
+.art-logo img{height:46px;width:auto;background:#fff;border-radius:12px;padding:5px}
+.art-copy h1{font-size:clamp(28px,3.4vw,44px);line-height:1.08;font-weight:800;letter-spacing:-.01em;margin-bottom:10px}
+.art-copy p{max-width:430px;opacity:.95;margin-bottom:22px}
+.art-points{display:grid;gap:10px;list-style:none}
+.art-points li{display:flex;gap:12px;align-items:center;font-weight:600;font-size:14px}
+.art-points span{width:36px;height:36px;border-radius:10px;background:#ffffff26;display:grid;place-items:center;font-size:17px}
+.login-panel{display:flex;align-items:center;justify-content:center;padding:32px;background:#fff}
+.login-card{width:min(400px,100%)}
+.login-card h2{font-size:28px;margin-bottom:4px}
+.pw-wrap{position:relative}
+.pw-wrap input{padding-right:70px}
+.pw-toggle{position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:0;color:var(--kch-accent);font-weight:600;font-size:12px;padding:6px 10px;border-radius:6px}
+.pw-toggle:hover{background:var(--kch-soft)}
+.login-card .primary{width:100%;padding:12px;font-size:15px;margin-top:18px}
+.login-err{color:#b00020;font-size:13px;min-height:20px;margin-top:10px}
+.demo{margin-top:22px;padding-top:16px;border-top:1px solid var(--kch-line)}
+.demo p{font-size:12px;color:var(--kch-accent);margin-bottom:8px}
+.demo-chips{display:flex;flex-wrap:wrap;gap:8px}
+@media(max-width:860px){
+  .login-split{grid-template-columns:1fr}
+  .login-art{min-height:230px;padding:28px}
+  .art-logo{left:24px;top:22px}
+  .art-points{display:none}
+}
 
 /* ---- Shell: sidebar and top bar ---- */
 .side{width:250px;position:sticky;top:0;height:100vh;overflow-y:auto}
@@ -123,3 +149,44 @@ td small{color:var(--kch-accent)}
   .panel,.stat{box-shadow:none;break-inside:avoid}
   body{background:#fff}
 }
+
+/* ---- Product thumbnails in Menu Management ---- */
+.thumb{width:44px;height:44px;border-radius:10px;object-fit:cover;vertical-align:middle;margin-right:10px;border:1px solid var(--kch-line)}
+
+/* ---- Product photo uploader ---- */
+.photo-field{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}
+.photo-preview{width:170px;aspect-ratio:4/3;border-radius:10px;overflow:hidden;border:1px dashed var(--kch-line);background:var(--kch-soft);display:flex;align-items:center;justify-content:center;color:var(--kch-accent);font-size:12px}
+.photo-preview img{width:100%;height:100%;object-fit:cover;display:block}
+.photo-actions{display:flex;flex-direction:column;gap:8px;align-items:flex-start;min-width:210px}
+.upload-btn{display:inline-flex;align-items:center;gap:6px;margin:0;background:var(--kch-primary);color:#fff;border-radius:var(--radius);padding:9px 16px;font-weight:600;font-size:13px;cursor:pointer;transition:background .2s ease}
+.upload-btn:hover{background:var(--kch-primary-dark)}
+.photo-actions .sub{margin:0}
+.photo-actions details{font-size:12px;color:var(--kch-accent)}
+.photo-actions summary{cursor:pointer}
+.photo-actions details input{margin-top:6px;min-width:230px}
+
+/* ---- Dashboard ---- */
+.greet{position:relative;overflow:hidden;border-radius:16px;padding:30px 32px;color:#fff;display:flex;justify-content:space-between;align-items:flex-start;gap:16px;box-shadow:var(--shadow);
+  background:linear-gradient(105deg,rgba(184,21,27,.95) 0%,rgba(227,30,36,.86) 55%,rgba(227,30,36,.55) 100%),url('../../assets/site/bread-loaves.jpg') center/cover,#E31E24}
+.greet h2{color:#fff;font-size:clamp(24px,3.4vw,32px);margin:4px 0 6px}
+.greet p{opacity:.95;margin:0;font-size:14px}
+.greet-date{font-size:12px;letter-spacing:.12em;text-transform:uppercase;font-weight:700;opacity:.9}
+.greet-role{background:#ffffff26;border:1px solid #ffffff66;padding:6px 14px;border-radius:999px;font-size:12px;font-weight:700;white-space:nowrap}
+.stat.ready{border-left-color:#28a745}
+.stat.alert{border-left-color:var(--kch-primary);background:#fff5f5}
+.section-title{margin:26px 0 10px;font-size:15px;color:var(--kch-heading)}
+.today-row{display:flex;align-items:center;gap:12px;width:100%;padding:10px 0;border-top:1px solid var(--kch-line);background:none;border-left:0;border-right:0;border-bottom:0;text-align:left;font:inherit;color:var(--kch-text)}
+.panel .today-row:first-of-type{border-top:0}
+.today-row.clickable{cursor:pointer}
+.today-row.clickable:hover{background:var(--kch-soft)}
+.t-time{min-width:64px;font-weight:700;color:var(--kch-heading);font-size:13px}
+.t-main{flex:1;min-width:0}
+.t-main b{display:block;color:var(--kch-heading);font-size:14px}
+.t-main small{display:block;color:var(--kch-accent);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.status-Mixed{background:#e0e7ff;color:#3730a3}
+.quick{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}
+.quick-card{display:flex;flex-direction:column;align-items:flex-start;gap:4px;text-align:left;background:var(--kch-surface);border:1px solid var(--kch-line);border-radius:12px;padding:16px;font:inherit;color:var(--kch-text);cursor:pointer;box-shadow:var(--shadow);transition:transform .15s ease,border-color .2s ease}
+.quick-card:hover{transform:translateY(-3px);border-color:var(--kch-primary)}
+.quick-card .q-ico{font-size:24px}
+.quick-card b{color:var(--kch-heading);font-size:15px}
+.quick-card small{color:var(--kch-accent);font-size:12px}

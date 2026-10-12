@@ -1,14 +1,15 @@
 <!DOCTYPE html>
-<html lang="en"><head ><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>KCH Bakery — Staff</title>
 <link rel="icon" href="../assets/logo.png">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../Styles/Bakery/bakery.css">
 <link rel="stylesheet" href="../Styles/Staff/staff.css"></head>
 <body><div class="shell">
 <nav class="side">
   <div class="logo"><img src="../assets/logo.png" alt="Kenya Children's Homes logo" onerror="this.remove()"><b>KCH Bakery</b><small>Staff area</small></div>
-  <button data-v="queue" class="active">📋 Order Queue</button>
+  <button data-v="home" class="active">🏠 Dashboard</button>
+  <button data-v="queue">📋 Order Queue</button>
   <button data-v="production">🧁 Production View</button>
   <button data-v="reports" class="locked">📊 Reports 🔒</button>
   <button data-v="menu" class="locked">🍰 Menu Management 🔒</button>
@@ -18,7 +19,7 @@
 </nav>
 <main>
   <header class="topbar">
-    <div class="titles"><h1 id="page-title">Order Queue</h1><div id="role-banner" class="role-banner"></div></div>
+    <div class="titles"><h1 id="page-title">Dashboard</h1><div id="role-banner" class="role-banner"></div></div>
     <div class="top-right">
       <div class="bell-wrap">
         <button id="bell" class="bell" data-bell aria-label="Notifications">🔔<span id="bell-count" class="bell-count" hidden>0</span></button>

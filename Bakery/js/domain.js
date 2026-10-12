@@ -36,8 +36,9 @@ export const defaultPolicy = () => policyFromRules(DEFAULT_RULES);
 // ---- Catalog: products with sizes and flavours ----
 export class Size { constructor(id, label, price) { Object.assign(this, { id, label, price }); } }
 export class Product {
-  constructor({ id, name, category, emoji, desc, ingredients = [], allergens = [], sizes, flavours = [], custom = false, soldOut = false, hidden = false }) {
-    Object.assign(this, { id, name, category, emoji, desc, ingredients, allergens, flavours, custom, soldOut, hidden });
+  // image: path to a photo from the site root (for example 'assets/site/cake-waves.jpg'); '' means no photo, so the emoji is shown.
+  constructor({ id, name, category, emoji, desc, ingredients = [], allergens = [], sizes, flavours = [], custom = false, soldOut = false, hidden = false, image = '' }) {
+    Object.assign(this, { id, name, category, emoji, desc, ingredients, allergens, flavours, custom, soldOut, hidden, image });
     this.sizes = sizes.map(s => s instanceof Size ? s : new Size(s.id, s.label, s.price));
   }
   get fromPrice() { return Math.min(...this.sizes.map(s => s.price)); }
@@ -117,13 +118,27 @@ export const CATALOG = [
     sizes: [{ id: 'each', label: 'Each', price: 55 }] }),
 ];
 
+// Starting photos for the menu. Files live in assets/site; paths are from the site root.
+// Add more here as photos arrive, or set them per product in the staff Menu Management page.
+const CATALOG_IMAGES = {
+  wb: 'assets/site/kelvin-loaf-packs.jpg',
+  bb: 'assets/site/bread-loaves.jpg',
+  ck: 'assets/site/cake-waves.jpg',
+  ckc: 'assets/site/cake-thank-you.jpg',
+  dn: 'assets/site/donuts-tray.jpg',
+  rdb: 'assets/site/bread-buns-crate.jpg',
+  qc: 'assets/site/queen-cakes.jpg',
+  lr: 'assets/site/long-rolls.jpg',
+};
+CATALOG.forEach(p => { p.image = CATALOG_IMAGES[p.id] || ''; });
+
 // ---- Product repository: the editable, persisted catalog ----
 // CATALOG above is the seed data only. Every screen (customer menu, staff Menu
 // Management) reads through this repository instead, so a manager's edits
 // actually stick and the customer site picks them up on next load.
 export class ProductRepository {
   constructor() { this.db = CATALOG.map(p => ProductRepository.toPlain(p)); }
-  static toPlain(p) { return { id: p.id, name: p.name, category: p.category, emoji: p.emoji, desc: p.desc, ingredients: [...p.ingredients], allergens: [...p.allergens], flavours: [...p.flavours], custom: p.custom, soldOut: p.soldOut, hidden: !!p.hidden, sizes: p.sizes.map(s => ({ id: s.id, label: s.label, price: s.price })) }; }
+  static toPlain(p) { return { id: p.id, name: p.name, category: p.category, emoji: p.emoji, desc: p.desc, ingredients: [...p.ingredients], allergens: [...p.allergens], flavours: [...p.flavours], custom: p.custom, soldOut: p.soldOut, hidden: !!p.hidden, image: p.image || '', sizes: p.sizes.map(s => ({ id: s.id, label: s.label, price: s.price })) }; }
   load() { return this.db; }
   persist(db) { this.db = db; }
   list() { return this.load().map(p => new Product(p)); }
@@ -140,10 +155,18 @@ export class ProductRepository {
   setHidden(id, hidden) { const db = this.load(), p = db.find(p => p.id === id); if (p) { p.hidden = hidden; this.persist(db); } }
 }
 export class LocalStorageProductRepository extends ProductRepository {
-  constructor() { super(); this._ensureSeeded(); }
+  constructor() { super(); this._ensureSeeded(); this._backfillImages(); }
   load() { return JSON.parse(localStorage.getItem('kch-catalog') || 'null') || this.db; }
   persist(db) { this.db = db; localStorage.setItem('kch-catalog', JSON.stringify(db)); }
   _ensureSeeded() { if (!localStorage.getItem('kch-catalog')) this.persist(this.db); }
+  // Catalogs saved in the browser before photos existed get the starting photos once.
+  // A product that already has an image field (even an empty one a manager chose) is never overwritten.
+  _backfillImages() {
+    const db = this.load(), seed = Object.fromEntries(CATALOG.map(p => [p.id, p.image || '']));
+    let changed = false;
+    db.forEach(p => { if (p.image === undefined) { p.image = seed[p.id] || ''; changed = true; } });
+    if (changed) this.persist(db);
+  }
 }
 
 // ---- Cart: one shared cart across products, like an Uber-style checkout ----
