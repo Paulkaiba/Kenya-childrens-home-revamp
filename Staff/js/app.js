@@ -1,4 +1,4 @@
-import { StaffDirectory, LocalStaffDirectory, StaffError, AuthService, LocalSessionStore, LocalStorageOrderRepository, LocalStorageProductRepository, Product, flattenLines, filterLines, nextStatus, productionSummary, STATUS_FLOW, parseTiers, tiersToText, describeTiers, parseDates, buildReport, buildNotifications, rowsToCsv, localDay } from './staffDomain.js';
+import { StaffDirectory, LocalStaffDirectory, StaffError, AuthService, LocalSessionStore, LocalStorageOrderRepository, LocalStorageProductRepository, Product, flattenLines, filterLines, nextStatus, productionSummary, STATUS_FLOW, parseTiers, tiersToText, describeTiers, parseDates, buildReport, buildNotifications, rowsToCsv, localDay, buildDashboard } from './staffDomain.js';
 import { getRules, saveRules, DEFAULT_RULES, onDataChange } from '../../shared/store.js';
 
 const $ = s => document.querySelector(s);
@@ -16,9 +16,10 @@ const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 
 const CATEGORIES = ['bread', 'cake', 'pastry'];
 const CAT_LABEL = { bread: 'Bread', cake: 'Cakes', pastry: 'Pastries' };
 // Sidebar labels, page titles, notification icons.
-const NAV = { queue: ['📋', 'Order Queue'], production: ['🧁', 'Production View'], reports: ['📊', 'Reports'], menu: ['🍰', 'Menu Management'], rules: ['⏱️', 'Scheduling Rules'], staff: ['👥', 'Staff Accounts'] };
-const TITLES = { queue: 'Order Queue', production: 'Production View', item: 'Production View', reports: 'Reports', menu: 'Menu Management', rules: 'Scheduling Rules', staff: 'Staff Accounts' };
+const NAV = { home: ['🏠', 'Dashboard'], queue: ['📋', 'Order Queue'], production: ['🧁', 'Production View'], reports: ['📊', 'Reports'], menu: ['🍰', 'Menu Management'], rules: ['⏱️', 'Scheduling Rules'], staff: ['👥', 'Staff Accounts'] };
+const TITLES = { home: 'Dashboard', queue: 'Order Queue', production: 'Production View', item: 'Production View', reports: 'Reports', menu: 'Menu Management', rules: 'Scheduling Rules', staff: 'Staff Accounts' };
 const NOTIF_ICON = { cancel: '⚠️', new: '🆕', pickup: '🛍️', soldout: '🚫' };
+const QUICK_DESC = { queue: 'See every order item and its status', production: 'What to bake today, item by item', reports: 'Sales figures, charts and CSV export', menu: 'Prices, photos and sold-out items', rules: 'Opening hours, notice times and capacity', staff: 'Add or remove people who can sign in' };
 const STAT_LABEL = { Received: 'To start', Baking: 'Baking', Ready: 'Ready for pickup', Collected: 'Collected' };
 const dayLabel = ymd => new Date(ymd + 'T00:00').toLocaleDateString('en-KE', { day: 'numeric', month: 'short' });
 const ago = iso => {
@@ -43,7 +44,7 @@ class StaffApp {
     this.editingProduct = null; // product id currently expanded for editing, or 'new'
     this.formImage = '';        // the photo (data URL or path) in the product form that is open
     this.rep = { range: 'month', ...this.rangeDates('month'), basis: 'ordered' };   // Reports page state
-    this.currentView = 'queue';
+    this.currentView = 'home';
     $('#who').textContent = `${staff.name} · ${ROLE_LABEL[staff.role] || staff.role}`;
     $('#role-banner').textContent = {
       manager: 'Manager access — full visibility and controls.',
@@ -62,10 +63,10 @@ class StaffApp {
     // Live updates when the customer app (or another staff tab) changes data.
     onDataChange(() => {
       this.refreshBell();
-      if (['queue', 'production', 'reports'].includes(this.currentView)) this.show(this.currentView);
+      if (['home', 'queue', 'production', 'reports'].includes(this.currentView)) this.show(this.currentView);
     });
     setInterval(() => { if (this.stillSignedIn()) this.refreshBell(); }, 15000);   // keeps "x min ago" fresh too
-    this.show('queue');
+    this.show('home');
   }
   // One gate for every way of opening a section (sidebar, back buttons, anything), so a baker or
   // supervisor can never reach a screen their role doesn't allow.
@@ -116,6 +117,33 @@ class StaffApp {
     const panel = $('#notif-panel');
     panel.hidden = !panel.hidden;
     if (!panel.hidden) panel.innerHTML = this.panelHtml(this.notifications(), this.loadSeen());
+  }
+
+  // ---- Dashboard: greeting banner, today's numbers, today's pickups and what needs attention ----
+  home() {
+    const dash = buildDashboard(this.allOrders()), me = this.staff;
+    const hr = new Date().getHours(), greet = hr < 12 ? 'Good morning' : hr < 17 ? 'Good afternoon' : 'Good evening';
+    const first = esc((me.name || '').split(' ')[0] || 'there');
+    const dateStr = new Date().toLocaleDateString('en-KE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    const clock = iso => new Date(iso).toLocaleTimeString('en-KE', { hour: 'numeric', minute: '2-digit' });
+    const stat = (num, label, cls = '') => `<div class="stat ${cls}"><span class="stat-num">${num}</span><span class="stat-label">${label}</span></div>`;
+    const pickups = dash.pickupList.slice(0, 8).map(p => `<div class="today-row"><span class="t-time">${clock(p.pickup)}</span><span class="t-main"><b>${esc(p.customer)}</b><small>${p.serial} · ${p.items} item${p.items === 1 ? '' : 's'}</small></span><span class="status status-${p.status}">${p.status}</span></div>`).join('');
+    const attention = this.notifications().filter(n => n.type === 'cancel' || n.type === 'new').slice(0, 6).map(n => `<button class="today-row clickable" data-notif="${esc(n.id)}" data-view="${n.view}"><span class="t-time">${NOTIF_ICON[n.type]}</span><span class="t-main"><b>${esc(n.title)}</b><small>${esc(n.detail)}</small></span><span class="notif-time">${ago(n.at)}</span></button>`).join('');
+    const quick = ['queue', 'production', 'reports', 'menu', 'rules', 'staff'].filter(v => this.allowed(v))
+      .map(v => `<button class="quick-card" data-v="${v}"><span class="q-ico">${NAV[v][0]}</span><b>${NAV[v][1]}</b><small>${QUICK_DESC[v]}</small></button>`).join('');
+    return `<div class="greet">
+        <div class="greet-copy"><span class="greet-date">${dateStr}</span><h2>${greet}, ${first} 👋</h2><p>Here is what is happening at the bakery today.</p></div>
+        <span class="greet-role">${ROLE_LABEL[me.role] || me.role}</span>
+      </div>
+      <div class="stats">
+        ${stat(dash.ordersToday, 'Orders placed today')}${stat(dash.pickupsToday, 'Pickups due today')}${stat(dash.itemsReady, 'Items ready to collect', 'ready')}${stat(dash.needsAttention, 'Need your attention', dash.needsAttention ? 'alert' : '')}
+      </div>
+      <div class="panel-grid">
+        <div class="panel"><h3>Today's pickups</h3>${pickups || '<p class="sub">No pickups are waiting today. 🎉</p>'}</div>
+        <div class="panel"><h3>Needs attention</h3>${attention || '<p class="sub">Nothing needs attention right now.</p>'}</div>
+      </div>
+      <h3 class="section-title">Quick links</h3>
+      <div class="quick">${quick}</div>`;
   }
 
   // ---- Order Queue: one row per item. Status is read-only here — it's set from

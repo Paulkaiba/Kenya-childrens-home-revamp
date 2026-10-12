@@ -325,4 +325,29 @@ export function buildNotifications(orders, products = [], now = new Date()) {
   products.filter(p => p.soldOut).forEach(p =>
     out.push({ id: `soldout:${p.id}`, type: 'soldout', rank: 3, title: 'Marked sold out', detail: p.name, at: null, view: 'menu', managerOnly: true }));
   return out.sort((a, b) => a.rank - b.rank || new Date(b.at || 0) - new Date(a.at || 0)).slice(0, 40);
+  
+}
+
+export function buildDashboard(orders, now = new Date()) {
+  const today = localDay(now);
+  const live = orders.filter(o => o.status !== 'Cancelled');
+  const ordersToday = live.filter(o => o.createdAt && localDay(o.createdAt) === today).length;
+  const rows = flattenLines(live).filter(r => r.status !== 'Cancelled');
+  const dueRows = rows.filter(r => r.pickup && localDay(r.pickup) === today && r.status !== 'Collected');
+  const groups = new Map();   // one entry per order and pickup time, so a mixed order shows once per collection
+  dueRows.forEach(r => {
+    const key = `${r.serial}|${r.pickup}`;
+    const g = groups.get(key) || { serial: r.serial, customer: r.customer.name, pickup: r.pickup, items: 0, set: new Set() };
+    g.items += r.qty; g.set.add(r.status); groups.set(key, g);
+  });
+  const pickupList = [...groups.values()]
+    .sort((a, b) => new Date(a.pickup) - new Date(b.pickup))
+    .map(g => ({ serial: g.serial, customer: g.customer, pickup: g.pickup, items: g.items, status: g.set.size === 1 ? [...g.set][0] : 'Mixed' }));
+  const needsAttention = buildNotifications(orders, [], now).filter(n => n.type === 'cancel' || n.type === 'new').length;
+  return {
+    today, ordersToday, pickupsToday: groups.size,
+    itemsDue: dueRows.reduce((n, r) => n + r.qty, 0),
+    itemsReady: rows.filter(r => r.status === 'Ready').reduce((n, r) => n + r.qty, 0),
+    needsAttention, pickupList,
+  };
 }
