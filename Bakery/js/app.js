@@ -8,6 +8,7 @@ const ksh = n => 'Ksh ' + n.toLocaleString();
 const when = d => new Date(d).toLocaleString('en-KE', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
 const CATEGORY_LABELS = { bread: 'Bread', cake: 'Cakes', pastry: 'Pastries' };
 const bucketLabel = b => CATEGORY_LABELS[b] || b;
+const altText = t => String(t).replace(/"/g, '&quot;');
 const lineSummary = o => {
   const sts = (o.lines || []).map(l => l.status || o.status);
   const uniq = [...new Set(sts)];
@@ -44,7 +45,7 @@ class App {
   constructor() {
     const clock = new Clock();
     this.cart = new Cart(); this.policy = policyFromRules(getRules()); this.scheduler = new Scheduler(clock);
-    this.catalog = new LocalStorageProductRepository();   // products: staff Menu Management edits these (sold out, prices...)
+    this.catalog = new LocalStorageProductRepository();   // products: staff Menu Management edits these (sold out, prices, photos...)
     this.service = new OrderService(new LocalStorageOrderRepository(), this.scheduler, this.policy, clock);
     this.loadRules();
     this.picker = new CalendarPicker(this.scheduler, (bucket, d) => { this.form.whenByBucket[bucket] = d; this.show(this.currentView); });
@@ -104,8 +105,9 @@ class App {
     return `<label>Date and time needed — ${bucketLabel(bucket)}</label><button class="ghost" data-cal="${bucket}">${picked ? when(picked) : 'Choose date and time'}</button>${lead ? `<div class="note">${bucketLabel(bucket)} need ${lead / 24} day${lead > 24 ? 's' : ''} notice.</div>` : ''}`;
   }
 
+  // Menu cards show the product photo when there is one, and fall back to the emoji.
   menu() {
-    const cards = this.catalog.list().filter(p => !p.hidden).map(p => `<div class="card">${p.soldOut ? '<span class="soldout-badge">Sold out</span>' : ''}<div class="emoji">${p.emoji}</div><b>${p.name}</b><div class="price">From ${ksh(p.fromPrice)}</div><small>${p.desc}</small>${p.soldOut ? '<button class="ghost" disabled>Sold out</button>' : `<button class="primary" data-order="${p.id}">Order</button>`}</div>`).join('');
+    const cards = this.catalog.list().filter(p => !p.hidden).map(p => `<div class="card">${p.soldOut ? '<span class="soldout-badge">Sold out</span>' : ''}${p.image ? `<div class="card-photo"><img loading="lazy" src="../${p.image}" alt="${altText(p.name)}"></div>` : `<div class="emoji">${p.emoji}</div>`}<b>${p.name}</b><div class="price">From ${ksh(p.fromPrice)}</div><small>${p.desc}</small>${p.soldOut ? '<button class="ghost" disabled>Sold out</button>' : `<button class="primary" data-order="${p.id}">Order</button>`}</div>`).join('');
     return `<h2>Menu</h2><p class="sub">Pick a product to see sizes, flavours and allergens before you order.</p><div class="cards">${cards}</div>`;
   }
 
@@ -131,7 +133,7 @@ class App {
       ${this.dateButton(p.category, lead)}
       <label>Ingredients</label><small>${p.ingredients.join(', ')}</small>
       <label>Allergens</label><small>${p.allergens.join(', ') || 'None listed'}</small>
-      </div><div class="box"><b>${p.size(s.size).label}${s.flavour ? ' · ' + s.flavour : ''}</b><div class="row total"><span>×${s.qty}</span><span>${ksh(p.size(s.size).price * s.qty)}</span></div>
+      </div><div class="box">${p.image ? `<img class="product-photo" src="../${p.image}" alt="${altText(p.name)}">` : ''}<b>${p.size(s.size).label}${s.flavour ? ' · ' + s.flavour : ''}</b><div class="row total"><span>×${s.qty}</span><span>${ksh(p.size(s.size).price * s.qty)}</span></div>
       <button class="primary" data-add>Add to order</button><button class="ghost" data-v="menu">Back to menu</button>${this.cart.isEmpty ? '' : ' <button class="ghost" data-v="cart">View cart</button>'}</div></div>`;
   }
 
@@ -141,6 +143,7 @@ class App {
     const s = this.pending, p = s.product;
     if (s.step === 'qty') {
       return `<h2>${p.emoji} ${p.name}</h2><p class="sub">${p.desc}</p><div class="box">
+        ${p.image ? `<img class="product-photo" src="../${p.image}" alt="${altText(p.name)}">` : ''}
         <label>How many cakes would you like?</label><div class="qty"><button data-pdec>−</button><span>${s.qty}</span><button data-pinc>+</button></div>
         <p></p><button class="primary" data-cakenext>Continue</button> <button class="ghost" data-v="menu">Back to menu</button></div>`;
     }

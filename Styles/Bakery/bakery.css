@@ -68,18 +68,23 @@ select:focus,input:focus,textarea:focus{outline:2px solid var(--kch-primary);out
 .choice input{width:auto}
 #errors{color:var(--kch-primary);margin:10px 0 0 18px}
 
-/* ---- Quantity, rows, totals, notes ---- */
+/* ---- Sold out, quantity, rows, totals, notes ---- */
 .card{position:relative}
-.soldout-badge{position:absolute;top:10px;right:10px;background:#c00;color:#fff;font-size:11px;font-weight:700;padding:3px 8px;border-radius:4px}
+.soldout-badge{position:absolute;top:10px;right:10px;z-index:2;background:#c00;color:#fff;font-size:11px;font-weight:700;padding:3px 8px;border-radius:4px}
 button:disabled{opacity:.5;cursor:not-allowed}
 .card button.ghost{width:100%;margin-top:6px}
-select{width:100%;padding:9px 12px;border:1px solid var(--line);border-radius:6px;font:inherit;background:#fff}
 .qty{display:flex;gap:10px;align-items:center}
 .qty button{width:30px;height:30px;border:1px solid var(--kch-line);background:var(--kch-surface);color:var(--kch-heading);border-radius:var(--radius)}
 .qty button:hover{background:var(--kch-soft)}
 .row{display:flex;justify-content:space-between;padding:5px 0}
 .total{border-top:1px solid var(--kch-line);margin-top:6px;padding-top:8px;font-weight:700;color:var(--kch-heading)}
 .note{background:#fff7e0;border:1px solid #f5d98b;padding:8px 12px;border-radius:var(--radius);margin:10px 0;font-size:12.5px}
+
+/* ---- Product photos ---- */
+.card-photo{margin:-16px -16px 12px;aspect-ratio:4/3;overflow:hidden;border-radius:var(--radius) var(--radius) 0 0;background:var(--kch-soft)}
+.card-photo img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .5s ease}
+.card:hover .card-photo img{transform:scale(1.07)}
+.product-photo{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:var(--radius);margin-bottom:10px}
 
 /* ---- Receipt and orders table ---- */
 .receipt{text-align:center;max-width:420px;margin:0 auto}

@@ -297,7 +297,7 @@ class StaffApp {
     const rows = products.map(p => this.editingProduct === p.id ? this.productForm(p) : `
       <div class="box product-row">
         <div class="product-row-head">
-          <div><b>${p.emoji} ${p.name}</b> <span class="sub">(${p.category})</span>${p.hidden ? ' <span class="tag-hidden">Hidden from customers</span>' : ''}</div>
+          <div>${p.image ? `<img class="thumb" src="../${p.image}" alt="">` : ''}<b>${p.emoji} ${p.name}</b> <span class="sub">(${p.category})</span>${p.hidden ? ' <span class="tag-hidden">Hidden from customers</span>' : ''}</div>
           <span><label class="sub chk"><input type="checkbox" data-visible="${p.id}" ${p.hidden ? '' : 'checked'}> Show on customer menu</label>
           <label class="sub chk"><input type="checkbox" data-soldout="${p.id}" ${p.soldOut ? 'checked' : ''}> Sold out</label></span>
         </div>
@@ -320,6 +320,7 @@ class StaffApp {
       <div class="two"><div><label>Emoji</label><input data-pf="emoji" value="${p?.emoji || '🍞'}"></div>
       <div><label>Category</label><select data-pf="category"><option value="bread" ${p?.category === 'bread' ? 'selected' : ''}>bread</option><option value="cake" ${p?.category === 'cake' ? 'selected' : ''}>cake</option><option value="pastry" ${!p || p.category === 'pastry' ? 'selected' : ''}>pastry</option></select></div></div>
       <label>Description</label><input data-pf="desc" value="${p?.desc || ''}">
+      <label>Photo file (for example assets/site/cake-waves.jpg, leave blank for none)</label><input data-pf="image" value="${p?.image || ''}">
       <label>Ingredients (comma-separated)</label><input data-pf="ingredients" value="${(p?.ingredients || []).join(', ')}">
       <label>Allergens (comma-separated)</label><input data-pf="allergens" value="${(p?.allergens || []).join(', ')}">
       <label>Flavours (comma-separated, leave blank if none)</label><input data-pf="flavours" value="${(p?.flavours || []).join(', ')}">
@@ -344,7 +345,7 @@ class StaffApp {
     const existing = this.catalog.get(id);
     const product = new Product({
       id, name, emoji: f('emoji').value.trim() || '🍞', category: f('category').value,
-      desc: f('desc').value.trim(),
+      desc: f('desc').value.trim(), image: f('image').value.trim(),
       ingredients: f('ingredients').value.split(',').map(x => x.trim()).filter(Boolean),
       allergens: f('allergens').value.split(',').map(x => x.trim()).filter(Boolean),
       flavours: f('flavours').value.split(',').map(x => x.trim()).filter(Boolean),

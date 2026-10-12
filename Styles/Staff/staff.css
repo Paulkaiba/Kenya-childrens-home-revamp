@@ -123,3 +123,6 @@ td small{color:var(--kch-accent)}
   .panel,.stat{box-shadow:none;break-inside:avoid}
   body{background:#fff}
 }
+
+/* ---- Product thumbnails in Menu Management ---- */
+.thumb{width:44px;height:44px;border-radius:10px;object-fit:cover;vertical-align:middle;margin-right:10px;border:1px solid var(--kch-line)}
