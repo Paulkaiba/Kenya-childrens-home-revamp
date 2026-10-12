@@ -11,6 +11,8 @@
   --kch-soft:#F8FAFC;             /* very light grey for hover and disabled areas */
   --kch-line:#E5E7EB;             /* borders */
   --kch-surface:#FFFFFF;          /* cards and panels */
+  --kch-tint:#FEF2F2;             /* pale red: hover, active chips, soft panels */
+  --kch-tint-line:#FECACA;
   --radius:8px;
   --shadow:0 4px 12px rgba(15,23,42,.06),0 1px 2px rgba(15,23,42,.08);
   --font-main:'Inter',system-ui,-apple-system,sans-serif;
@@ -48,9 +50,10 @@ button{font:inherit;cursor:pointer}
 .icon-btn:hover{background:#fdecea}
 
 /* ---- Cards and boxes ---- */
-.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:18px}
 .card,.box{background:var(--kch-surface);border:1px solid var(--kch-line);border-radius:var(--radius);padding:16px}
-.card{box-shadow:var(--shadow)}
+.card{box-shadow:var(--shadow);transition:transform .25s ease,box-shadow .25s ease}
+.card:hover{transform:translateY(-4px);box-shadow:0 14px 30px rgba(15,23,42,.14)}
 .card b{color:var(--kch-heading)}
 .emoji{font-size:40px}
 .price{color:var(--kch-primary);font-weight:700;margin:2px 0}
@@ -86,6 +89,25 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .card:hover .card-photo img{transform:scale(1.07)}
 .product-photo{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:var(--radius);margin-bottom:10px}
 
+.card-photo.empty{display:flex;align-items:center;justify-content:center;font-size:58px;background:linear-gradient(135deg,#FEF2F2,#FDE9D2)}
+
+/* ---- Menu: category chips and group headings ---- */
+.menu-head{display:flex;justify-content:space-between;align-items:flex-end;gap:12px}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 6px}
+.chip{background:var(--kch-surface);color:var(--kch-heading);border:1px solid var(--kch-line);border-radius:999px;padding:7px 16px;font-weight:600;font-size:13px;transition:background .2s ease,border-color .2s ease,color .2s ease}
+.chip span{color:var(--kch-accent);font-weight:500;margin-left:4px}
+.chip:hover{background:var(--kch-soft);border-color:var(--kch-accent)}
+.chip.on{background:var(--kch-primary);border-color:var(--kch-primary);color:#fff}
+.chip.on span{color:#ffffffcc}
+.menu-group{display:flex;align-items:baseline;gap:10px;margin:26px 0 12px;color:var(--kch-heading);font-size:18px}
+.menu-group small{color:var(--kch-accent);font-size:12px;font-weight:500}
+
+/* ---- Header: home button and tagline ---- */
+.head-left{display:flex;align-items:center;gap:14px;min-width:0}
+.home-btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--kch-line);color:var(--kch-heading);text-decoration:none;font-weight:600;font-size:13px;padding:7px 14px;border-radius:999px;white-space:nowrap;transition:background .2s ease,border-color .2s ease,color .2s ease}
+.home-btn:hover{background:var(--kch-tint);border-color:var(--kch-primary);color:var(--kch-primary)}
+.tagline{font-size:13px}
+
 /* ---- Receipt and orders table ---- */
 .receipt{text-align:center;max-width:420px;margin:0 auto}
 .serial{font-size:22px;font-weight:700;color:var(--kch-primary);margin:8px 0}
@@ -118,5 +140,6 @@ th{color:var(--kch-heading)}
   .side .logo{width:100%;padding:6px 16px 10px}
   .side a{margin:4px 12px}
   .two{grid-template-columns:1fr}
+  .tagline{display:none}
 }
 @media print{.side,header,button{display:none}}

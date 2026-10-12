@@ -10,6 +10,8 @@ const itemLabel = l => `${l.name} (${l.size}${l.flavour ? ', ' + l.flavour : ''}
 const MANAGER_ONLY = ['menu', 'rules', 'reports'];
 const ROLE_LABEL = { manager: 'Manager', supervisor: 'Supervisor', baker: 'Baker' };
 const esc = t => String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+// Uploaded photos are stored as data URLs; photos from the website folder are paths from the site root.
+const imgSrc = v => /^(data:|https?:)/.test(v) ? v : '../' + v;
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const CATEGORIES = ['bread', 'cake', 'pastry'];
 const CAT_LABEL = { bread: 'Bread', cake: 'Cakes', pastry: 'Pastries' };
@@ -39,6 +41,7 @@ class StaffApp {
     this.prodDate = today();
     this.prodItem = null; // { category, key } when drilled into one item
     this.editingProduct = null; // product id currently expanded for editing, or 'new'
+    this.formImage = '';        // the photo (data URL or path) in the product form that is open
     this.rep = { range: 'month', ...this.rangeDates('month'), basis: 'ordered' };   // Reports page state
     this.currentView = 'queue';
     $('#who').textContent = `${staff.name} · ${ROLE_LABEL[staff.role] || staff.role}`;
@@ -297,7 +300,7 @@ class StaffApp {
     const rows = products.map(p => this.editingProduct === p.id ? this.productForm(p) : `
       <div class="box product-row">
         <div class="product-row-head">
-          <div>${p.image ? `<img class="thumb" src="../${p.image}" alt="">` : ''}<b>${p.emoji} ${p.name}</b> <span class="sub">(${p.category})</span>${p.hidden ? ' <span class="tag-hidden">Hidden from customers</span>' : ''}</div>
+          <div>${p.image ? `<img class="thumb" src="${imgSrc(p.image)}" alt="">` : ''}<b>${p.emoji} ${p.name}</b> <span class="sub">(${p.category})</span>${p.hidden ? ' <span class="tag-hidden">Hidden from customers</span>' : ''}</div>
           <span><label class="sub chk"><input type="checkbox" data-visible="${p.id}" ${p.hidden ? '' : 'checked'}> Show on customer menu</label>
           <label class="sub chk"><input type="checkbox" data-soldout="${p.id}" ${p.soldOut ? 'checked' : ''}> Sold out</label></span>
         </div>
@@ -320,7 +323,16 @@ class StaffApp {
       <div class="two"><div><label>Emoji</label><input data-pf="emoji" value="${p?.emoji || '🍞'}"></div>
       <div><label>Category</label><select data-pf="category"><option value="bread" ${p?.category === 'bread' ? 'selected' : ''}>bread</option><option value="cake" ${p?.category === 'cake' ? 'selected' : ''}>cake</option><option value="pastry" ${!p || p.category === 'pastry' ? 'selected' : ''}>pastry</option></select></div></div>
       <label>Description</label><input data-pf="desc" value="${p?.desc || ''}">
-      <label>Photo file (for example assets/site/cake-waves.jpg, leave blank for none)</label><input data-pf="image" value="${p?.image || ''}">
+      <label>Photo</label>
+      <div class="photo-field">
+        <div class="photo-preview" id="pf-preview">${this.photoPreviewHtml()}</div>
+        <div class="photo-actions">
+          <label class="upload-btn">📷 Choose photo<input type="file" accept="image/*" data-pf-file hidden></label>
+          <button type="button" class="ghost small" data-removephoto>Remove photo</button>
+          <small class="sub">JPG or PNG. The photo is resized for you.</small>
+          <details><summary>Use a file already in the website folder</summary><input data-pf-path placeholder="assets/site/scones.jpg" value="${esc(this.formImage && !this.formImage.startsWith('data:') ? this.formImage : '')}"></details>
+        </div>
+      </div>
       <label>Ingredients (comma-separated)</label><input data-pf="ingredients" value="${(p?.ingredients || []).join(', ')}">
       <label>Allergens (comma-separated)</label><input data-pf="allergens" value="${(p?.allergens || []).join(', ')}">
       <label>Flavours (comma-separated, leave blank if none)</label><input data-pf="flavours" value="${(p?.flavours || []).join(', ')}">
@@ -345,15 +357,45 @@ class StaffApp {
     const existing = this.catalog.get(id);
     const product = new Product({
       id, name, emoji: f('emoji').value.trim() || '🍞', category: f('category').value,
-      desc: f('desc').value.trim(), image: f('image').value.trim(),
+      desc: f('desc').value.trim(), image: this.formImage || '',
       ingredients: f('ingredients').value.split(',').map(x => x.trim()).filter(Boolean),
       allergens: f('allergens').value.split(',').map(x => x.trim()).filter(Boolean),
       flavours: f('flavours').value.split(',').map(x => x.trim()).filter(Boolean),
       custom: f('custom').checked, soldOut: existing?.soldOut || false, hidden: !f('visible').checked, sizes,
     });
-    this.catalog.save(product);
+    try { this.catalog.save(product); }
+    catch (err) { alert('The browser storage is full, so this photo could not be saved. Try a smaller photo, or remove photos you no longer use.'); return; }
     this.editingProduct = null;
     this.show('menu');
+  }
+
+  // ---- Product photo uploader ----
+  photoPreviewHtml() { return this.formImage ? `<img src="${esc(imgSrc(this.formImage))}" alt="">` : '<span>No photo yet</span>'; }
+  renderPhotoPreview() { const el = $('#pf-preview'); if (el) el.innerHTML = this.photoPreviewHtml(); }
+  // Shrinks a chosen photo to at most 900px and turns it into a small JPEG, so it fits comfortably in the browser's storage.
+  resizeImage(file, max = 900) {
+    return new Promise((resolve, reject) => {
+      if (!file || !file.type.startsWith('image/')) return reject(new Error('Please choose an image file (JPG or PNG).'));
+      const url = URL.createObjectURL(file), img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, max / Math.max(img.width, img.height));
+        const c = document.createElement('canvas');
+        c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);   // white behind transparent PNGs
+        ctx.drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url);
+        let out = c.toDataURL('image/jpeg', 0.82);
+        if (out.length > 350000) out = c.toDataURL('image/jpeg', 0.6);   // keep each photo small
+        resolve(out);
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('That file could not be read as an image.')); };
+      img.src = url;
+    });
+  }
+  async handlePhoto(file) {
+    try { this.formImage = await this.resizeImage(file); this.renderPhotoPreview(); }
+    catch (err) { alert(err.message); }
   }
 
   onClick(e) {
@@ -400,8 +442,9 @@ class StaffApp {
     }
     else if (d.saverules !== undefined) { this.saveRulesForm(); }
     else if (d.resetrules !== undefined) { if (confirm('Reset every scheduling rule to the original defaults?')) { saveRules(DEFAULT_RULES); this.show('rules'); } }
-    else if (d.newproduct !== undefined) { this.editingProduct = 'new'; this.show('menu'); }
-    else if (d.editproduct) { this.editingProduct = d.editproduct; this.show('menu'); }
+    else if (d.newproduct !== undefined) { this.editingProduct = 'new'; this.formImage = ''; this.show('menu'); }
+    else if (d.editproduct) { this.editingProduct = d.editproduct; this.formImage = this.catalog.get(d.editproduct)?.image || ''; this.show('menu'); }
+    else if (d.removephoto !== undefined) { this.formImage = ''; this.renderPhotoPreview(); }
     else if (d.canceledit !== undefined) { this.editingProduct = null; this.show('menu'); }
     else if (d.saveproduct !== undefined) { this.saveProductForm(d.saveproduct || null); }
     else if (d.deleteproduct) { if (confirm(`Delete this product from the menu? This cannot be undone.`)) { this.catalog.remove(d.deleteproduct); this.show('menu'); } }
@@ -409,7 +452,9 @@ class StaffApp {
   }
   onChange(e) {
     if (!this.stillSignedIn()) return;
-    if (e.target.dataset.filter) { this.filters[e.target.dataset.filter] = e.target.value; this.show('queue'); }
+    if (e.target.dataset.pfFile !== undefined) { this.handlePhoto(e.target.files[0]); }
+    else if (e.target.dataset.pfPath !== undefined) { this.formImage = e.target.value.trim(); this.renderPhotoPreview(); }
+    else if (e.target.dataset.filter) { this.filters[e.target.dataset.filter] = e.target.value; this.show('queue'); }
     else if (e.target.dataset.rep) { this.rep = { ...this.rep, [e.target.dataset.rep]: e.target.value, range: e.target.dataset.rep === 'basis' ? this.rep.range : 'custom' }; this.show('reports'); }
     else if (e.target.id === 'prod-date') { this.prodDate = e.target.value; this.show('production'); }
     else if (e.target.dataset.soldout) { this.catalog.setSoldOut(e.target.dataset.soldout, e.target.checked); this.show('menu'); }

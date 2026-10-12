@@ -126,3 +126,15 @@ td small{color:var(--kch-accent)}
 
 /* ---- Product thumbnails in Menu Management ---- */
 .thumb{width:44px;height:44px;border-radius:10px;object-fit:cover;vertical-align:middle;margin-right:10px;border:1px solid var(--kch-line)}
+
+/* ---- Product photo uploader ---- */
+.photo-field{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}
+.photo-preview{width:170px;aspect-ratio:4/3;border-radius:10px;overflow:hidden;border:1px dashed var(--kch-line);background:var(--kch-soft);display:flex;align-items:center;justify-content:center;color:var(--kch-accent);font-size:12px}
+.photo-preview img{width:100%;height:100%;object-fit:cover;display:block}
+.photo-actions{display:flex;flex-direction:column;gap:8px;align-items:flex-start;min-width:210px}
+.upload-btn{display:inline-flex;align-items:center;gap:6px;margin:0;background:var(--kch-primary);color:#fff;border-radius:var(--radius);padding:9px 16px;font-weight:600;font-size:13px;cursor:pointer;transition:background .2s ease}
+.upload-btn:hover{background:var(--kch-primary-dark)}
+.photo-actions .sub{margin:0}
+.photo-actions details{font-size:12px;color:var(--kch-accent)}
+.photo-actions summary{cursor:pointer}
+.photo-actions details input{margin-top:6px;min-width:230px}

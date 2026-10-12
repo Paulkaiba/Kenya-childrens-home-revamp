@@ -127,6 +127,8 @@ const CATALOG_IMAGES = {
   ckc: 'assets/site/cake-thank-you.jpg',
   dn: 'assets/site/donuts-tray.jpg',
   rdb: 'assets/site/bread-buns-crate.jpg',
+  qc: 'assets/site/queen-cakes.jpg',
+  lr: 'assets/site/long-rolls.jpg',
 };
 CATALOG.forEach(p => { p.image = CATALOG_IMAGES[p.id] || ''; });
 

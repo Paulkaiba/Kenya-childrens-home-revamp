@@ -9,6 +9,8 @@ const when = d => new Date(d).toLocaleString('en-KE', { weekday: 'short', day: '
 const CATEGORY_LABELS = { bread: 'Bread', cake: 'Cakes', pastry: 'Pastries' };
 const bucketLabel = b => CATEGORY_LABELS[b] || b;
 const altText = t => String(t).replace(/"/g, '&quot;');
+// Photos from the staff uploader are stored as data URLs; photos from the website folder are paths from the site root.
+const imgSrc = v => /^(data:|https?:)/.test(v) ? v : '../' + v;
 const lineSummary = o => {
   const sts = (o.lines || []).map(l => l.status || o.status);
   const uniq = [...new Set(sts)];
@@ -50,6 +52,7 @@ class App {
     this.loadRules();
     this.picker = new CalendarPicker(this.scheduler, (bucket, d) => { this.form.whenByBucket[bucket] = d; this.show(this.currentView); });
     this.form = { fulfilment: 'pickup', whenByBucket: {} }; this.lookup = {}; this.pending = null;
+    this.menuCat = 'all';   // category chip selected on the menu
     // View names are resolved through this map (not this[v]()) so they never collide
     // with same-named instance properties like this.cart.
     this.screens = { menu: this.menu, product: this.product, cart: this.cartScreen, checkout: this.checkout, done: this.done, orders: this.orders };
@@ -105,10 +108,20 @@ class App {
     return `<label>Date and time needed — ${bucketLabel(bucket)}</label><button class="ghost" data-cal="${bucket}">${picked ? when(picked) : 'Choose date and time'}</button>${lead ? `<div class="note">${bucketLabel(bucket)} need ${lead / 24} day${lead > 24 ? 's' : ''} notice.</div>` : ''}`;
   }
 
-  // Menu cards show the product photo when there is one, and fall back to the emoji.
+  // Menu: filter chips by category, products grouped under headings. A photo fills the top of each card;
+  // products without one get a soft emoji tile of the same size, so the grid always lines up.
   menu() {
-    const cards = this.catalog.list().filter(p => !p.hidden).map(p => `<div class="card">${p.soldOut ? '<span class="soldout-badge">Sold out</span>' : ''}${p.image ? `<div class="card-photo"><img loading="lazy" src="../${p.image}" alt="${altText(p.name)}"></div>` : `<div class="emoji">${p.emoji}</div>`}<b>${p.name}</b><div class="price">From ${ksh(p.fromPrice)}</div><small>${p.desc}</small>${p.soldOut ? '<button class="ghost" disabled>Sold out</button>' : `<button class="primary" data-order="${p.id}">Order</button>`}</div>`).join('');
-    return `<h2>Menu</h2><p class="sub">Pick a product to see sizes, flavours and allergens before you order.</p><div class="cards">${cards}</div>`;
+    const all = this.catalog.list().filter(p => !p.hidden);
+    const countOf = k => k === 'all' ? all.length : all.filter(p => p.category === k).length;
+    const cat = countOf(this.menuCat) ? this.menuCat : 'all';
+    const chips = [['all', 'All'], ...Object.entries(CATEGORY_LABELS)].filter(([k]) => countOf(k))
+      .map(([k, label]) => `<button class="chip ${cat === k ? 'on' : ''}" data-menucat="${k}">${label} <span>${countOf(k)}</span></button>`).join('');
+    const card = p => `<div class="card">${p.soldOut ? '<span class="soldout-badge">Sold out</span>' : ''}<div class="card-photo${p.image ? '' : ' empty'}">${p.image ? `<img loading="lazy" src="${imgSrc(p.image)}" alt="${altText(p.name)}">` : `<span>${p.emoji}</span>`}</div><b>${p.name}</b><div class="price">From ${ksh(p.fromPrice)}</div><small>${p.desc}</small>${p.soldOut ? '<button class="ghost" disabled>Sold out</button>' : `<button class="primary" data-order="${p.id}">Order</button>`}</div>`;
+    const groups = Object.entries(CATEGORY_LABELS).filter(([k]) => cat === 'all' || cat === k).map(([k, label]) => {
+      const list = all.filter(p => p.category === k);
+      return list.length ? `<h3 class="menu-group">${label}<small>${list.length} item${list.length === 1 ? '' : 's'}</small></h3><div class="cards">${list.map(card).join('')}</div>` : '';
+    }).join('');
+    return `<div class="menu-head"><div><h2>Our menu</h2><p class="sub">Pick a product to see sizes, flavours and allergens before you order.</p></div></div><div class="chips">${chips}</div>${groups || '<p class="sub">Nothing on the menu right now.</p>'}`;
   }
 
   openProduct(id) {
@@ -133,7 +146,7 @@ class App {
       ${this.dateButton(p.category, lead)}
       <label>Ingredients</label><small>${p.ingredients.join(', ')}</small>
       <label>Allergens</label><small>${p.allergens.join(', ') || 'None listed'}</small>
-      </div><div class="box">${p.image ? `<img class="product-photo" src="../${p.image}" alt="${altText(p.name)}">` : ''}<b>${p.size(s.size).label}${s.flavour ? ' · ' + s.flavour : ''}</b><div class="row total"><span>×${s.qty}</span><span>${ksh(p.size(s.size).price * s.qty)}</span></div>
+      </div><div class="box">${p.image ? `<img class="product-photo" src="${imgSrc(p.image)}" alt="${altText(p.name)}">` : ''}<b>${p.size(s.size).label}${s.flavour ? ' · ' + s.flavour : ''}</b><div class="row total"><span>×${s.qty}</span><span>${ksh(p.size(s.size).price * s.qty)}</span></div>
       <button class="primary" data-add>Add to order</button><button class="ghost" data-v="menu">Back to menu</button>${this.cart.isEmpty ? '' : ' <button class="ghost" data-v="cart">View cart</button>'}</div></div>`;
   }
 
@@ -143,7 +156,7 @@ class App {
     const s = this.pending, p = s.product;
     if (s.step === 'qty') {
       return `<h2>${p.emoji} ${p.name}</h2><p class="sub">${p.desc}</p><div class="box">
-        ${p.image ? `<img class="product-photo" src="../${p.image}" alt="${altText(p.name)}">` : ''}
+        ${p.image ? `<img class="product-photo" src="${imgSrc(p.image)}" alt="${altText(p.name)}">` : ''}
         <label>How many cakes would you like?</label><div class="qty"><button data-pdec>−</button><span>${s.qty}</span><button data-pinc>+</button></div>
         <p></p><button class="primary" data-cakenext>Continue</button> <button class="ghost" data-v="menu">Back to menu</button></div>`;
     }
@@ -246,6 +259,7 @@ class App {
     else if (d.cakeback !== undefined) this.cakeBack();
     else if (d.add !== undefined) this.addToCart();
     else if (d.remove) { this.cart.remove(d.remove); this.show(this.currentView === 'checkout' ? 'checkout' : 'cart'); }
+    else if (d.menucat) { this.menuCat = d.menucat; this.show('menu'); }
     else if (d.v) this.show(d.v);
     else if (d.cal) {
       let lead = this.cart.leadHoursFor(d.cal, this.policy);
