@@ -1,5 +1,6 @@
 import { policyFromRules, Cart, Customer, Scheduler, Clock, OrderService, LocalStorageOrderRepository, LocalStorageProductRepository, ValidationError } from './domain.js';
 import { initStore, getRules, isDayFull, onDataChange } from '../../shared/store.js';
+import { RemoteProductRepository, loadServerData } from './remote.js';
 
 initStore();
 
@@ -44,10 +45,13 @@ class CalendarPicker {
 }
 
 class App {
-  constructor() {
+  // server = { products, rules } from the database, or null when the server could not be reached (built-in demo data is used instead)
+  constructor(server) {
     const clock = new Clock();
-    this.cart = new Cart(); this.policy = policyFromRules(getRules()); this.scheduler = new Scheduler(clock);
-    this.catalog = new LocalStorageProductRepository();   // products: staff Menu Management edits these (sold out, prices, photos...)
+    this.serverRules = server ? server.rules : null;
+    this.offline = !server;
+    this.cart = new Cart(); this.policy = policyFromRules(this.serverRules || getRules()); this.scheduler = new Scheduler(clock);
+    this.catalog = server ? new RemoteProductRepository(server.products) : new LocalStorageProductRepository();   // from PostgreSQL; the old browser copy is only the fallback
     this.service = new OrderService(new LocalStorageOrderRepository(), this.scheduler, this.policy, clock);
     this.loadRules();
     this.picker = new CalendarPicker(this.scheduler, (bucket, d) => { this.form.whenByBucket[bucket] = d; this.show(this.currentView); });
@@ -73,12 +77,27 @@ class App {
       if (!$('#modal').hidden) this.picker.render();
       else if (['menu', 'orders'].includes(this.currentView)) this.show(this.currentView);
     });
+    // Live updates from the database: pick up menu and rule changes (a manager hiding a product, a price change...) without a reload.
+    if (server) {
+      setInterval(() => this.refreshFromServer(), 30000);
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) this.refreshFromServer(); });
+    }
     this.show('menu');
   }
 
-  // Pull the latest opening hours, closed dates, lead times and capacity from the shared store.
+  async refreshFromServer() {
+    try {
+      const data = await loadServerData();
+      if (JSON.stringify(data) === JSON.stringify({ products: this.catalog.load(), rules: this.serverRules })) return;   // nothing changed
+      this.catalog.replace(data.products); this.serverRules = data.rules; this.loadRules();
+      if (!$('#modal').hidden) this.picker.render();
+      else if (this.currentView === 'menu') this.show('menu');
+    } catch (err) { console.warn('Menu refresh failed:', err.message); }
+  }
+
+  // Apply the opening hours, closed dates, lead times and capacity (from the server, or the browser copy when offline).
   loadRules() {
-    const r = getRules();
+    const r = this.serverRules || getRules();
     this.policy = policyFromRules(r);
     this.service.policy = this.policy;
     Object.assign(this.scheduler, {
@@ -96,7 +115,8 @@ class App {
     $('#fab-count').textContent = this.cart.count;
     $('#fab-cart').hidden = this.cart.isEmpty || ['cart', 'checkout', 'done'].includes(v);
     try {
-      $('#view').innerHTML = this.screens[v].call(this);
+      const notice = this.offline ? '<div class="box" style="border-color:#f0ad4e;background:#fff8e6"><b>Server not reachable.</b> Showing the built-in demo menu; orders are saved only in this browser.</div>' : '';
+      $('#view').innerHTML = notice + this.screens[v].call(this);
     } catch (err) {
       console.error(err);
       $('#view').innerHTML = `<div class="box"><b>Something went wrong showing this page.</b><p class="sub">${err.message}</p><button class="primary" data-v="menu">Back to menu</button></div>`;
@@ -282,4 +302,7 @@ class App {
     else if (d.close !== undefined) this.picker.close();
   }
 }
-new App();
+// Load the menu and rules from the database first. If that fails, the app still opens with its built-in demo data.
+$('#view').innerHTML = '<p class="sub">Loading the menu…</p>';
+const server = await loadServerData().catch(err => { console.warn('Could not reach the server, using built-in demo data:', err.message); return null; });
+new App(server);
