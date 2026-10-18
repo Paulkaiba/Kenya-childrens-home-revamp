@@ -1,5 +1,6 @@
 import { StaffDirectory, LocalStaffDirectory, StaffError, AuthService, LocalSessionStore, LocalStorageOrderRepository, LocalStorageProductRepository, Product, flattenLines, filterLines, nextStatus, productionSummary, STATUS_FLOW, parseTiers, tiersToText, describeTiers, parseDates, buildReport, buildNotifications, rowsToCsv, localDay, buildDashboard } from './staffDomain.js';
 import { getRules, saveRules, DEFAULT_RULES, onDataChange } from '../../shared/store.js';
+import { RemoteStaffRepository, RemoteProductRepository } from './api.js';
 
 const $ = s => document.querySelector(s);
 const ksh = n => 'Ksh ' + Number(n).toLocaleString();
@@ -36,8 +37,8 @@ class StaffApp {
   constructor(staff, directory, auth) {
     Object.assign(this, { staff, directory, auth });
     this.resettingStaff = null; // account id whose password box is open
-    this.repo = new LocalStorageOrderRepository();
-    this.catalog = new LocalStorageProductRepository();
+    this.repo = new RemoteStaffRepository(); 
+    this.catalog = new RemoteProductRepository();
     this.filters = { status: '', category: '', date: '' };
     this.prodDate = today();
     this.prodItem = null; // { category, key } when drilled into one item
@@ -66,7 +67,7 @@ class StaffApp {
       if (['home', 'queue', 'production', 'reports'].includes(this.currentView)) this.show(this.currentView);
     });
     setInterval(() => { if (this.stillSignedIn()) this.refreshBell(); }, 15000);   // keeps "x min ago" fresh too
-    this.show('home');
+    
   }
   // One gate for every way of opening a section (sidebar, back buttons, anything), so a baker or
   // supervisor can never reach a screen their role doesn't allow.
@@ -372,7 +373,7 @@ class StaffApp {
     </div>`;
   }
 
-  saveProductForm(existingId) {
+  async saveProductForm(existingId) {
     const f = s => document.querySelector(`[data-pf="${s}"]`);
     const name = f('name').value.trim();
     if (!name) { alert('Name is required.'); return; }
@@ -426,7 +427,7 @@ class StaffApp {
     catch (err) { alert(err.message); }
   }
 
-  onClick(e) {
+  async onClick(e) {
     if (!this.stillSignedIn()) return;
     if (!e.target.closest('.bell-wrap')) $('#notif-panel').hidden = true;   // click anywhere else closes the bell
     const d = e.target.closest('button')?.dataset; if (!d) return;
@@ -475,23 +476,64 @@ class StaffApp {
     else if (d.removephoto !== undefined) { this.formImage = ''; this.renderPhotoPreview(); }
     else if (d.canceledit !== undefined) { this.editingProduct = null; this.show('menu'); }
     else if (d.saveproduct !== undefined) { this.saveProductForm(d.saveproduct || null); }
-    else if (d.deleteproduct) { if (confirm(`Delete this product from the menu? This cannot be undone.`)) { this.catalog.remove(d.deleteproduct); this.show('menu'); } }
+    else if (d.deleteproduct) 
+      { 
+    if (confirm(`Delete this product from the menu? This cannot be undone.`)) 
+      { 
+        try {
+            await this.catalog.remove(d.deleteproduct); 
+            this.show('menu'); 
+        } catch (err) {
+            alert('Failed to delete: ' + err.message);
+        }
+    } 
+}
     else if (d.v) this.show(d.v);
   }
-  onChange(e) {
+  async onChange(e) {
     if (!this.stillSignedIn()) return;
     if (e.target.dataset.pfFile !== undefined) { this.handlePhoto(e.target.files[0]); }
     else if (e.target.dataset.pfPath !== undefined) { this.formImage = e.target.value.trim(); this.renderPhotoPreview(); }
     else if (e.target.dataset.filter) { this.filters[e.target.dataset.filter] = e.target.value; this.show('queue'); }
     else if (e.target.dataset.rep) { this.rep = { ...this.rep, [e.target.dataset.rep]: e.target.value, range: e.target.dataset.rep === 'basis' ? this.rep.range : 'custom' }; this.show('reports'); }
     else if (e.target.id === 'prod-date') { this.prodDate = e.target.value; this.show('production'); }
-    else if (e.target.dataset.soldout) { this.catalog.setSoldOut(e.target.dataset.soldout, e.target.checked); this.show('menu'); }
-    else if (e.target.dataset.visible) { this.catalog.setHidden(e.target.dataset.visible, !e.target.checked); this.show('menu'); }
+else if (e.target.dataset.soldout) {
+      try {
+        await this.catalog.setSoldOut(e.target.dataset.soldout, e.target.checked);
+        this.show('menu'); // Re-render only AFTER the database saves
+      } catch (err) {
+        alert('Failed to update sold out status: ' + err.message);
+      }
+    }    
+    else if (e.target.dataset.visible) {
+      try {
+        await this.catalog.setHidden(e.target.dataset.visible, !e.target.checked);
+        this.show('menu'); // Re-render only AFTER the database saves
+      } catch (err) {
+        alert('Failed to update visibility: ' + err.message);
+      }
+    }
+    
   }
 }
 
 const directory = new LocalStaffDirectory();
 const auth = new AuthService(directory, new LocalSessionStore());
 const staff = auth.current();
-if (!staff) location.href = 'index.html';
-else new StaffApp(staff, directory, auth);
+
+if (!staff) {
+  location.href = 'index.html';
+} else {
+  const app = new StaffApp(staff, directory, auth);
+  
+  Promise.all([
+    app.repo.fetchFromServer(),
+    app.catalog.fetchFromServer()
+  ]).then(() => {
+    app.show('home');
+  }).catch(err => {
+    console.error(err);
+    alert("Could not connect to database: " + err.message);
+    app.show('home');
+  });
+}
