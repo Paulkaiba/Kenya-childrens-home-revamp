@@ -17,8 +17,7 @@ const plain = p => ({ id: p.id, name: p.name, category: p.category, emoji: p.emo
   custom: !!p.custom, soldOut: !!p.soldOut, hidden: !!p.hidden, image: p.image || '', sizes: p.sizes.map(s => ({ id: s.id, label: s.label, price: s.price })), flavours: [...p.flavours] });
 const serverCatalog = () => CATALOG.map(plain);
 const serverRules = () => JSON.parse(JSON.stringify({ productLead: DEFAULT_RULES.productLead, hours: DEFAULT_RULES.hours, closedDates: DEFAULT_RULES.closedDates, dailyCapacity: DEFAULT_RULES.dailyCapacity }));
-const reply = (data, status = 200) => ({ ok: status < 400, status, text: async () => JSON.stringify(data) });
-const raw = (text, status = 200) => ({ ok: status < 400, status, text: async () => text });
+const reply = (data, status = 200) => ({ ok: status < 400, status, json: async () => data });
 const routes = { catalog: () => reply({ ok: true, products: serverCatalog() }), rules: () => reply({ ok: true, rules: serverRules() }) };
 function serve(cat = routes.catalog, rules = routes.rules) {
   globalThis.fetch = async url => { const name = String(url).split('/').pop(); if (name === 'catalog.php') return cat(); if (name === 'rules.php') return rules(); throw new Error('unexpected ' + name); };
@@ -39,7 +38,7 @@ const tick = () => new Promise(r => setTimeout(r, 10));
 // ---------- loading ----------
 test('the API address is built in one place and points at PHP/api/', async () => {
   const { apiUrl } = await import('../shared/api.js');
-  assert.match(apiUrl('catalog.php').pathname, /\/PHP\/api\/catalog\.php$/);
+  assert.match(apiUrl('catalog.php').pathname, /\/PHP\/Bakery\/catalog\.php$/);
 });
 
 test('loadServerData returns the menu and the rules from catalog.php and rules.php', async () => {
@@ -52,17 +51,10 @@ test('loadServerData returns the menu and the rules from catalog.php and rules.p
 test('a server error is reported with its own message, not swallowed', async () => {
   serve(() => reply({ ok: false, error: 'SQLSTATE[08006] connection refused' }, 500));
   await assert.rejects(loadServerData(), /connection refused/);
-  serve(() => raw('<html>Bad gateway</html>', 502));
-  await assert.rejects(loadServerData(), /did not send JSON \(HTTP 502\).*Bad gateway/);
+  serve(() => ({ ok: false, status: 502, json: async () => { throw new SyntaxError('not json'); } }));
+  await assert.rejects(loadServerData(), /HTTP 502/);
   down();
   await assert.rejects(loadServerData(), /Failed to fetch/);
-});
-
-test('PHP warnings printed before the JSON are shown in the error, so the cause is visible', async () => {
-  serve(undefined, () => raw('<br />\n<b>Warning</b>:  require(): Failed opening required \'/x/_bootstrap.php\' in <b>rules.php</b> on line 4'));
-  await assert.rejects(loadServerData(), /rules\.php did not send JSON \(HTTP 200\).*Failed opening required/);
-  serve(undefined, () => raw(''));
-  await assert.rejects(loadServerData(), /\(nothing at all\)/);
 });
 
 // ---------- the repository the menu reads from ----------

@@ -308,17 +308,23 @@ export class OrderService {
   static CANCEL_HOURS = 24;
   constructor(repo, scheduler, policy, clock) { Object.assign(this, { repo, scheduler, policy, clock }); }
 
-  place(cart, customer, { fulfilment = 'pickup', location = '', whenByBucket = {}, notes = '' }) {
+  // Everything that can be wrong with an order, checked without saving anything. Throws ValidationError.
+  // (The server repeats these checks: see PHP/Bakery/_orders.php.)
+  check(cart, customer, { fulfilment = 'pickup', location = '', whenByBucket = {} } = {}) {
     const errs = customer.errors();
-    const buckets = cart.buckets;
     if (cart.isEmpty) errs.push('Your cart is empty');
-    else buckets.forEach(b => {
+    else cart.buckets.forEach(b => {
       const t = whenByBucket[b];
       if (!t || !this.scheduler.isValid(t, cart.leadHoursFor(b, this.policy)))
         errs.push(`Pick an available date and time for ${b === 'cake' ? 'the cakes' : 'the rest of your order'}`);
     });
     if (fulfilment === 'delivery' && !location.trim()) errs.push('Enter your delivery location');
     if (errs.length) throw new ValidationError(errs);
+  }
+
+  place(cart, customer, { fulfilment = 'pickup', location = '', whenByBucket = {}, notes = '' }) {
+    this.check(cart, customer, { fulfilment, location, whenByBucket });
+    const buckets = cart.buckets;
     const now = this.clock.now(), p = n => String(n).padStart(2, '0');
     const key = `${now.getFullYear()}${p(now.getMonth() + 1)}${p(now.getDate())}`;
     const serial = `KBK-${key}-${String(this.repo.nextSeq(key)).padStart(4, '0')}`;
