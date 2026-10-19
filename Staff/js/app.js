@@ -1,7 +1,6 @@
 import { StaffDirectory, LocalStaffDirectory, StaffError, AuthService, LocalSessionStore, LocalStorageOrderRepository, LocalStorageProductRepository, Product, flattenLines, filterLines, nextStatus, productionSummary, STATUS_FLOW, parseTiers, tiersToText, describeTiers, parseDates, buildReport, buildNotifications, rowsToCsv, localDay, buildDashboard } from './staffDomain.js';
 import { getRules, saveRules, DEFAULT_RULES, onDataChange } from '../../shared/store.js';
-import { RemoteStaffRepository, RemoteProductRepository } from './api.js';
-
+import { RemoteStaffRepository, RemoteProductRepository, RemoteRulesRepository } from './api.js';
 const $ = s => document.querySelector(s);
 const ksh = n => 'Ksh ' + Number(n).toLocaleString();
 const when = iso => new Date(iso).toLocaleString('en-KE', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
@@ -39,6 +38,8 @@ class StaffApp {
     this.resettingStaff = null; // account id whose password box is open
     this.repo = new RemoteStaffRepository(); 
     this.catalog = new RemoteProductRepository();
+    this.rulesRepo = new RemoteRulesRepository();
+    this.serverRules = null;
     this.filters = { status: '', category: '', date: '' };
     this.prodDate = today();
     this.prodItem = null; // { category, key } when drilled into one item
@@ -282,7 +283,7 @@ class StaffApp {
   // ---- Scheduling Rules (manager only, enforced in show()). Nothing here is hardcoded:
   // everything is saved to the shared store and read by the customer site. ----
   rules() {
-    const r = getRules(), products = this.catalog.list();
+    const r = this.serverRules || getRules(), products = this.catalog.list();
     const dayBoxes = DAYS.map((n, i) => `<label class="chk"><input type="checkbox" data-rf-day="${i}" ${r.hours.closedDays.includes(i) ? 'checked' : ''}> ${n}</label>`).join('');
     const prodRow = p => `<div class="row rule-row"><span><b>${p.emoji} ${p.name}</b>${p.hidden ? ' <span class="tag-hidden">Hidden</span>' : ''}<br>
       <small class="sub">${describeTiers(r.productLead?.[p.id])}</small></span>
@@ -305,7 +306,7 @@ class StaffApp {
       <button class="primary" data-saverules>Save rules</button> <button class="ghost" data-resetrules>Reset to defaults</button>`;
   }
 
-  saveRulesForm() {
+    async saveRulesForm() {
     const q = a => document.querySelector(a), f = k => q(`[data-rf="${k}"]`);
     const open = Number(f('open').value), close = Number(f('close').value), capacity = Number(f('capacity').value);
     if (!(open >= 0 && close <= 24 && open < close)) { alert('Opening hour must be earlier than closing hour.'); return; }
@@ -318,9 +319,18 @@ class StaffApp {
     });
     if (bad.length) { alert('Please fix these lines (use “more than, days”, like 30, 1):\n\n' + bad.join('\n')); return; }
     const closedDays = [...document.querySelectorAll('[data-rf-day]')].filter(b => b.checked).map(b => Number(b.dataset.rfDay));
-    saveRules({ productLead, hours: { open, close, closedDays }, closedDates: parseDates(f('closedDates').value), dailyCapacity: capacity });
-    alert('Saved. The customer site will follow these rules.');
-    this.show('rules');
+    
+    const newRules = { productLead, hours: { open, close, closedDays }, closedDates: parseDates(f('closedDates').value), dailyCapacity: capacity };
+    
+    // Save to database
+    try {
+      await this.rulesRepo.save(newRules);
+      this.serverRules = newRules; // Update local memory
+      alert('Saved to database. The customer site will follow these rules.');
+      this.show('rules');
+    } catch (err) {
+      alert('Failed to save rules: ' + err.message);
+    }
   }
 
   // ---- Menu Management (manager only, enforced in show()) ----
@@ -524,11 +534,12 @@ const staff = auth.current();
 if (!staff) {
   location.href = 'index.html';
 } else {
-  const app = new StaffApp(staff, directory, auth);
+    const app = new StaffApp(staff, directory, auth);
   
   Promise.all([
     app.repo.fetchFromServer(),
-    app.catalog.fetchFromServer()
+    app.catalog.fetchFromServer(),
+    app.rulesRepo.fetchFromServer().then(r => { app.serverRules = r; }) // <--- FETCH RULES
   ]).then(() => {
     app.show('home');
   }).catch(err => {

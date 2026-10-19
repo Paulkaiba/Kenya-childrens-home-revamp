@@ -88,3 +88,22 @@ export class RemoteProductRepository {
     if (p) { p.hidden = hidden; await this.save(p); }
   }
 }
+
+export class RemoteRulesRepository {
+  async fetchFromServer() {
+    const res = await fetch(apiUrl('rules.php'));
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'Failed to fetch rules');
+    return data.rules;
+  }
+
+  async save(rules) {
+    const res = await fetch(apiUrl('rules.php'), {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ rules })
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'Save failed');
+  }
+}
