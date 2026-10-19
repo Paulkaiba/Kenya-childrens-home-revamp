@@ -1,26 +1,24 @@
-// Staff/js/api.js
-// Handles all communication with the PHP/PostgreSQL backend.
 import { Product } from '../../Bakery/js/domain.js';
-
 const apiUrl = name => `/PHP/Staff/${name}`;
 
 export class RemoteStaffRepository {
   constructor() {
-    this.db = { orders: [], products: [] };
-  }
-  
-  async fetchFromServer() {
-    const res = await fetch(apiUrl('orders.php'));
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    if (!data.ok) throw new Error(data.error || 'Failed to fetch orders');
-    this.db.orders = data.orders;
-    // Note: we will get products from RemoteProductRepository soon, 
-    // but keeping it here for backward compatibility with the old code.
-    this.db.products = data.products; 
+    this.db = { orders: [], products: [], staff: [] };
   }
   
   load() { return this.db; }
+
+  async fetchFromServer() {
+    const resOrders = await fetch(apiUrl('orders.php'));
+    const dataOrders = await resOrders.json();
+    if (!dataOrders.ok) throw new Error(dataOrders.error || 'Failed to fetch orders');
+    this.db.orders = dataOrders.orders;
+    this.db.products = dataOrders.products; 
+
+    const resStaff = await fetch(apiUrl('staff.php'));
+    const dataStaff = await resStaff.json();
+    if (dataStaff.ok) this.db.staff = dataStaff.staff;
+  }
   
   async updateLineStatus(serial, lineId, status) {
     const res = await fetch(apiUrl('update_status.php'), {
@@ -41,23 +39,69 @@ export class RemoteStaffRepository {
     if (!data.ok) throw new Error(data.error || 'Cancel failed');
     await this.fetchFromServer();
   }
+
+    async login(username, password) {
+    const res = await fetch(apiUrl('login.php'), {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ username, password })
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'Login failed');
+    return data.staff;
+  }
+
+  async getCurrentSession() {
+    const res = await fetch(apiUrl('login.php'));
+    const data = await res.json();
+    return data.ok ? data.staff : null;
+  }
+
+  async logout() {
+    await fetch(apiUrl('logout.php'));
+  }
+
+    async addStaff(staffData) {
+    const res = await fetch(apiUrl('staff.php'), {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(staffData)
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    await this.fetchFromServer(); // Refresh the cache immediately
+    return data;
+  }
+
+    async removeStaff(id) {
+    const res = await fetch(apiUrl('delete_staff.php'), {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ id })
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    await this.fetchFromServer();
+  }
+
+  async resetPassword(id, password) {
+    const res = await fetch(apiUrl('reset_password.php'), {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ id, password })
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+  }
 }
 
 export class RemoteProductRepository {
   constructor() { this.db = []; }
-  
   async fetchFromServer() {
     const res = await fetch(apiUrl('menu.php'));
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     if (!data.ok) throw new Error(data.error || 'Failed to fetch products');
     this.db = data.products;
   }
-  
   load() { return this.db; }
   list() { return this.db.map(p => new Product(p)); }
   get(id) { const p = this.db.find(p => p.id === id); return p ? new Product(p) : undefined; }
-  
   async save(product) {
     const res = await fetch(apiUrl('menu.php'), {
       method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -67,7 +111,6 @@ export class RemoteProductRepository {
     if (!data.ok) throw new Error(data.error || 'Save failed');
     await this.fetchFromServer();
   }
-  
   async remove(id) {
     const res = await fetch(apiUrl('delete_product.php'), {
       method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -77,12 +120,10 @@ export class RemoteProductRepository {
     if (!data.ok) throw new Error(data.error || 'Delete failed');
     await this.fetchFromServer();
   }
-  
   async setSoldOut(id, soldOut) {
     const p = this.get(id);
     if (p) { p.soldOut = soldOut; await this.save(p); }
   }
-  
   async setHidden(id, hidden) {
     const p = this.get(id);
     if (p) { p.hidden = hidden; await this.save(p); }
@@ -92,12 +133,10 @@ export class RemoteProductRepository {
 export class RemoteRulesRepository {
   async fetchFromServer() {
     const res = await fetch(apiUrl('rules.php'));
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     if (!data.ok) throw new Error(data.error || 'Failed to fetch rules');
     return data.rules;
   }
-
   async save(rules) {
     const res = await fetch(apiUrl('rules.php'), {
       method: 'POST', headers: {'Content-Type': 'application/json'},

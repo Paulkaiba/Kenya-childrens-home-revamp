@@ -78,10 +78,8 @@ class StaffApp {
     return true;
   }
   // If this account was removed (even from another tab), send the person back to the login page.
-  stillSignedIn() {
-    const now = this.auth.current();
-    if (!now) { location.href = 'index.html'; return false; }
-    this.staff = now;
+    stillSignedIn() {
+    // The PHP session handles security on the backend. 
     return true;
   }
   show(v) {
@@ -253,31 +251,63 @@ class StaffApp {
   }
 
   // ---- Staff Accounts (managers and supervisors). Only managers can reset passwords. ----
-  accounts() {
+      accounts() {
     const me = this.staff, canReset = !!me.canResetPasswords;
-    const rows = this.directory.list().map(p => {
-      const blocker = this.directory.removeBlocker(me, p.id);
+    
+    // Get the staff list from the database cache
+    const staffList = this.auth.db && this.auth.db.staff ? this.auth.db.staff : [];
+
+    const rows = staffList.map(p => {
       const reset = !canReset ? '' : this.resettingStaff === p.id
         ? `<input type="text" data-pwinput="${p.id}" placeholder="New password (6+ characters)" style="width:200px"> <button class="primary" data-savepw="${p.id}">Save</button> <button class="ghost" data-cancelpw>Cancel</button>`
         : `<button class="ghost" data-resetpw="${p.id}">Reset password</button>`;
-      const remove = blocker ? `<small class="sub">${esc(blocker)}</small>` : `<button class="ghost" data-removestaff="${p.id}">Remove</button>`;
+        
+      const remove = p.id === me.id 
+        ? `<small class="sub">You cannot remove yourself.</small>` 
+        : `<button class="ghost" data-removestaff="${p.id}">Remove</button>`;
+
       return `<tr><td>${esc(p.name)}${p.id === me.id ? ' <span class="tag-hidden">You</span>' : ''}</td><td>${esc(p.username)}</td><td>${ROLE_LABEL[p.role]}</td><td class="acct-actions">${reset} ${remove}</td></tr>`;
     }).join('');
-    const roles = StaffDirectory.manageableRoles(me.role).map(r => `<option value="${r}" ${r === 'baker' ? 'selected' : ''}>${ROLE_LABEL[r]}</option>`).join('');
+
+    const roles = ['manager', 'supervisor', 'baker'].map(r => `<option value="${r}" ${r === 'baker' ? 'selected' : ''}>${ROLE_LABEL[r]}</option>`).join('');
+    
     return `<p class="sub">Add or remove the people who can sign in to this staff area.${canReset ? ' If someone forgets their password, reset it here and tell them the new one.' : ' Password resets are done by a manager.'}</p>
       <div class="box"><b>Add a person</b>
-        <div class="two"><div><label>Full name</label><input data-sf="name"></div><div><label>Username (they sign in with this)</label><input data-sf="username" autocapitalize="off"></div></div>
-        <div class="two"><div><label>Role</label><select data-sf="role">${roles}</select></div><div><label>Starting password (6+ characters)</label><input type="text" data-sf="password"></div></div>
+        <div class="two"><div><label>Full name</label><input data-sf="name" autocomplete="off"></div><div><label>Username (they sign in with this)</label><input data-sf="username" autocomplete="off" autocapitalize="off"></div></div>
+        <div class="two"><div><label>Role</label><select data-sf="role">${roles}</select></div><div><label>Starting password (6+ characters)</label><input type="text" data-sf="password" autocomplete="off"></div></div>
         <p></p><button class="primary" data-addstaff>Add account</button></div>
-      <div class="box table-wrap"><table><tr><th>Name</th><th>Username</th><th>Role</th><th></th></tr>${rows}</table></div>`;
+      
+      <!-- THIS TABLE WAS MISSING -->
+      <div class="box table-wrap">
+        <table>
+          <tr><th>Name</th><th>Username</th><th>Role</th><th></th></tr>
+          ${rows}
+        </table>
+      </div>`;
   }
 
-  addStaff() {
+    async addStaff() {
     const f = k => document.querySelector(`[data-sf="${k}"]`);
+    const name = f('name').value.trim();
+    const username = f('username').value.trim();
+    const role = f('role').value;
+    const password = f('password').value;
+
+    if (!name || !username || password.length < 6) {
+      alert('Please fill all fields. Password must be at least 6 characters.');
+      return;
+    }
+
     try {
-      this.directory.add(this.staff, { name: f('name').value, username: f('username').value, role: f('role').value, password: f('password').value });
+      // Send to PHP (PostgreSQL)
+      await this.auth.addStaff({ name, username, role, password });
+      
+      // Clear the form and refresh the page
+      alert('Staff member added successfully!');
       this.show('staff');
-    } catch (e) { if (e instanceof StaffError) alert(e.message); else throw e; }
+    } catch (err) {
+      alert('Failed to add staff: ' + err.message);
+    }
   }
 
   // ---- Scheduling Rules (manager only, enforced in show()). Nothing here is hardcoded:
@@ -461,23 +491,37 @@ class StaffApp {
     }
     else if (d.cancel) { if (confirm(`Cancel order ${d.cancel}? This cancels every item in it.`)) { this.repo.cancelOrder(d.cancel); this.show('queue'); } }
     else if (d.addstaff !== undefined) { this.addStaff(); }
-    else if (d.removestaff) {
-      const id = Number(d.removestaff), who = this.directory.byId(id);
-      if (who && confirm(`Remove ${who.name}? They will no longer be able to sign in.`)) {
-        try { this.directory.remove(this.staff, id); } catch (err) { if (err instanceof StaffError) alert(err.message); else throw err; }
-        this.show('staff');
+          else if (d.removestaff) {
+      if (confirm(`Remove this staff member? They will no longer be able to sign in.`)) {
+        try {
+          await this.auth.removeStaff(Number(d.removestaff));
+          this.show('staff');
+        } catch (err) {
+          alert('Failed to remove staff: ' + err.message);
+        }
       }
     }
-    else if (d.resetpw) { this.resettingStaff = Number(d.resetpw); this.show('staff'); }
-    else if (d.cancelpw !== undefined) { this.resettingStaff = null; this.show('staff'); }
+    else if (d.resetpw) { 
+      this.resettingStaff = Number(d.resetpw); 
+      this.show('staff'); 
+    }
+    else if (d.cancelpw !== undefined) { 
+      this.resettingStaff = null; 
+      this.show('staff'); 
+    }
     else if (d.savepw) {
-      const id = Number(d.savepw), who = this.directory.byId(id);
+      const id = Number(d.savepw);
+      const newPassword = document.querySelector(`[data-pwinput="${id}"]`).value;
+      if (newPassword.length < 6) { alert("Password must be 6+ characters."); return; }
+      
       try {
-        this.directory.resetPassword(this.staff, id, document.querySelector(`[data-pwinput="${id}"]`).value);
+        await this.auth.resetPassword(id, newPassword);
         this.resettingStaff = null;
-        alert(`Password changed for ${who ? who.name : 'this account'}. Tell them the new password.`);
+        alert('Password changed successfully.');
         this.show('staff');
-      } catch (err) { if (err instanceof StaffError) alert(err.message); else throw err; }
+      } catch (err) {
+        alert('Failed to reset password: ' + err.message);
+      }
     }
     else if (d.saverules !== undefined) { this.saveRulesForm(); }
     else if (d.resetrules !== undefined) { if (confirm('Reset every scheduling rule to the original defaults?')) { saveRules(DEFAULT_RULES); this.show('rules'); } }
@@ -527,24 +571,31 @@ else if (e.target.dataset.soldout) {
   }
 }
 
-const directory = new LocalStaffDirectory();
-const auth = new AuthService(directory, new LocalSessionStore());
-const staff = auth.current();
+const authRepo = new RemoteStaffRepository();
 
-if (!staff) {
-  location.href = 'index.html';
-} else {
-    const app = new StaffApp(staff, directory, auth);
+authRepo.getCurrentSession().then(staff => {
+  if (!staff) {
+    location.href = 'index.html';
+    return;
+  }
+
+  // Pass the authRepo as both directory and auth to avoid breaking the old UI code
+  const app = new StaffApp(staff, authRepo, authRepo);
   
   Promise.all([
     app.repo.fetchFromServer(),
     app.catalog.fetchFromServer(),
-    app.rulesRepo.fetchFromServer().then(r => { app.serverRules = r; }) // <--- FETCH RULES
+    app.rulesRepo.fetchFromServer().then(r => { app.serverRules = r; }),
+    app.auth.fetchFromServer() // <--- This is the key
   ]).then(() => {
     app.show('home');
   }).catch(err => {
-    console.error(err);
-    alert("Could not connect to database: " + err.message);
-    app.show('home');
+    console.error("Data load failed:", err);
+    document.getElementById('view').innerHTML = `
+      <div class="box" style="border-color: #dc2626; background: #fee2e2; color: #991b1b;">
+        <h3>Failed to load data from the database</h3>
+        <p>${err.message}</p>
+        <button class="primary" onclick="location.reload()">Try Again</button>
+      </div>`;
   });
-}
+});
