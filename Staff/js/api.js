@@ -20,12 +20,29 @@ export class RemoteStaffRepository {
     if (dataStaff.ok) this.db.staff = dataStaff.staff;
   }
   
-  async updateLineStatus(serial, lineId, status) {
+    async updateLineStatus(serial, lineId, status) {
+    // Add a check to ensure data is valid before sending
+    if (!serial || !lineId || !status) {
+      console.error("Missing data for update:", { serial, lineId, status });
+      throw new Error("Missing data for update. Check console.");
+    }
+
     const res = await fetch(apiUrl('update_status.php'), {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
+      method: 'POST', 
+      headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ serial, lineId, status })
     });
-    const data = await res.json();
+    
+    // Check if the response is valid JSON before parsing
+    const text = await res.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      console.error("Server returned HTML/Error instead of JSON:", text);
+      throw new Error("Server crashed. See console.");
+    }
+
     if (!data.ok) throw new Error(data.error || 'Update failed');
     await this.fetchFromServer();
   }

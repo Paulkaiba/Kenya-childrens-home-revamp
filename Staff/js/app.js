@@ -484,10 +484,23 @@ class StaffApp {
     else if (d.csv !== undefined) { if (this.staff.isManager) this.downloadCsv(); }
     else if (d.printreport !== undefined) window.print();
     else if (d.item) { const [category, key] = d.item.split('|'); this.prodItem = { category, key: decodeURIComponent(key) }; this.show('item'); }
-    else if (d.lineadvance) {
+            else if (d.lineadvance) {
       const [serial, lineId] = d.lineadvance.split('|');
-      this.repo.updateLineStatus(serial, lineId, nextStatus(this.repo.get(serial).lines.find(l => l.id === lineId).status));
-      this.show('item');
+      try {
+        const order = this.allOrders().find(o => o.serial === serial);
+        const line = order.lines.find(l => l.id === lineId);
+        const next = nextStatus(line.status);
+        
+        console.log("Marking next status:", next); // <--- ADD THIS
+        
+        if (next) {
+          await this.auth.updateLineStatus(serial, lineId, next);
+          console.log("Successfully updated in database!"); // <--- ADD THIS
+          this.show('item'); 
+        }
+      } catch (err) {
+        alert('Failed to update status: ' + err.message);
+      }
     }
     else if (d.cancel) { if (confirm(`Cancel order ${d.cancel}? This cancels every item in it.`)) { this.repo.cancelOrder(d.cancel); this.show('queue'); } }
     else if (d.addstaff !== undefined) { this.addStaff(); }
