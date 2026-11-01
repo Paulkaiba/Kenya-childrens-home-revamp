@@ -1,5 +1,6 @@
 import { policyFromRules, Cart, Customer, Scheduler, Clock, OrderService, LocalStorageOrderRepository, LocalStorageProductRepository, ValidationError } from './domain.js';
-import { initStore, getRules, isDayFull, onDataChange } from '../../shared/store.js';
+import { initStore, getRules, isDayFull, onDataChange, localYmd } from '../../shared/store.js';
+import { RemoteProductRepository, RemoteOrderService, loadServerData } from './remote.js';
 
 initStore();
 
@@ -44,11 +45,16 @@ class CalendarPicker {
 }
 
 class App {
-  constructor() {
+  // server = { products, rules } from the database, or null when the server could not be reached (built-in demo data is used instead)
+  constructor(server) {
     const clock = new Clock();
-    this.cart = new Cart(); this.policy = policyFromRules(getRules()); this.scheduler = new Scheduler(clock);
-    this.catalog = new LocalStorageProductRepository();   // products: staff Menu Management edits these (sold out, prices, photos...)
-    this.service = new OrderService(new LocalStorageOrderRepository(), this.scheduler, this.policy, clock);
+    this.serverRules = server ? server.rules : null;
+    this.offline = !server;
+    this.cart = new Cart(); this.policy = policyFromRules(this.serverRules || getRules()); this.scheduler = new Scheduler(clock);
+    this.catalog = server ? new RemoteProductRepository(server.products) : new LocalStorageProductRepository();   // from PostgreSQL; the old browser copy is only the fallback
+    // Online: orders are saved by PHP in PostgreSQL. Offline fallback: the old browser storage.
+    this.service = server ? new RemoteOrderService(this.scheduler, this.policy, clock) : new OrderService(new LocalStorageOrderRepository(), this.scheduler, this.policy, clock);
+    this.found = null; this.lookupNote = ''; this.placing = false;
     this.loadRules();
     this.picker = new CalendarPicker(this.scheduler, (bucket, d) => { this.form.whenByBucket[bucket] = d; this.show(this.currentView); });
     this.form = { fulfilment: 'pickup', whenByBucket: {} }; this.lookup = {}; this.pending = null;
@@ -73,17 +79,33 @@ class App {
       if (!$('#modal').hidden) this.picker.render();
       else if (['menu', 'orders'].includes(this.currentView)) this.show(this.currentView);
     });
+    // Live updates from the database: pick up menu and rule changes (a manager hiding a product, a price change...) without a reload.
+    if (server) {
+      setInterval(() => this.refreshFromServer(), 30000);
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) this.refreshFromServer(); });
+    }
     this.show('menu');
   }
 
-  // Pull the latest opening hours, closed dates, lead times and capacity from the shared store.
+  async refreshFromServer() {
+    try {
+      const data = await loadServerData();
+      if (JSON.stringify(data) === JSON.stringify({ products: this.catalog.load(), rules: this.serverRules })) return;   // nothing changed
+      this.catalog.replace(data.products); this.serverRules = data.rules; this.loadRules();
+      if (!$('#modal').hidden) this.picker.render();
+      else if (this.currentView === 'menu') this.show('menu');
+    } catch (err) { console.warn('Menu refresh failed:', err.message); }
+  }
+
+  // Apply the opening hours, closed dates, lead times and capacity (from the server, or the browser copy when offline).
   loadRules() {
-    const r = getRules();
+    const r = this.serverRules || getRules();
     this.policy = policyFromRules(r);
     this.service.policy = this.policy;
+    const full = r.fullDates ? new Set(r.fullDates) : null;   // days already at capacity, from the database
     Object.assign(this.scheduler, {
       open: r.hours.open, close: r.hours.close, closedDays: r.hours.closedDays,
-      closedDates: r.closedDates, isFull: d => isDayFull(d),
+      closedDates: r.closedDates, isFull: full ? (d => full.has(localYmd(d))) : (d => isDayFull(d)),
     });
   }
 
@@ -96,7 +118,8 @@ class App {
     $('#fab-count').textContent = this.cart.count;
     $('#fab-cart').hidden = this.cart.isEmpty || ['cart', 'checkout', 'done'].includes(v);
     try {
-      $('#view').innerHTML = this.screens[v].call(this);
+      const notice = this.offline ? '<div class="box" style="border-color:#f0ad4e;background:#fff8e6"><b>Server not reachable.</b> Showing the built-in demo menu; orders are saved only in this browser.</div>' : '';
+      $('#view').innerHTML = notice + this.screens[v].call(this);
     } catch (err) {
       console.error(err);
       $('#view').innerHTML = `<div class="box"><b>Something went wrong showing this page.</b><p class="sub">${err.message}</p><button class="primary" data-v="menu">Back to menu</button></div>`;
@@ -224,16 +247,22 @@ class App {
       <div class="box"><b>Order summary</b>${rows}<div class="row total"><span>Total</span><span>${ksh(this.cart.subtotal)}</span></div>${isDelivery ? '<p class="sub">Delivery fee is not included — our manager will contact you by SMS/WhatsApp to agree a delivery price.</p>' : ''}<button class="primary" data-place>Place order via M-Pesa</button></div></div>`;
   }
 
-  place() {
+  async place() {
+    if (this.placing) return;                      // ignore a second click while the first order is still being sent
+    this.placing = true;
     try {
       const f = this.form;
-      this.order = this.service.place(this.cart, new Customer(f.name || '', f.phone || '', f.email || ''), { fulfilment: f.fulfilment, location: f.location || '', whenByBucket: f.whenByBucket, notes: f.notes });
+      const customer = new Customer(f.name || '', f.phone || '', f.email || '');
+      const opts = { fulfilment: f.fulfilment, location: f.location || '', whenByBucket: f.whenByBucket, notes: f.notes };
+      this.order = this.offline ? this.service.place(this.cart, customer, opts) : await this.service.place(this.cart, customer, opts);
       this.form = { fulfilment: 'pickup', whenByBucket: {} };
       this.show('done');
+      if (!this.offline) this.refreshFromServer();   // this order may have filled a day
     } catch (e) {
-      if (!(e instanceof ValidationError)) throw e;
-      $('#errors').innerHTML = e.list.map(x => `<li>${x}</li>`).join('');
-    }
+      const safe = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+      const list = e instanceof ValidationError ? e.list : [`We could not place your order (${safe(e.message)}). Nothing was saved, so please try again.`];
+      $('#errors').innerHTML = list.map(x => `<li>${x}</li>`).join('');
+    } finally { this.placing = false; }
   }
 
   done() {
@@ -243,11 +272,34 @@ class App {
     return `<div class="box receipt"><div class="emoji">✅</div><h2>Order confirmed</h2><div class="sub">An M-Pesa prompt is sent to ${o.customer.phone} (simulated in this prototype). Payment is required to confirm the order.</div><div class="serial">${o.serial}</div>${o.lines.map(l => `<div class="row"><span>${l.name} (${l.size}${l.flavour ? ', ' + l.flavour : ''})${l.message ? ' — “' + l.message + '”' : ''} ×${l.qty}</span><span>${ksh(l.qty * l.price)}</span></div>`).join('')}<div class="row total"><span>Total</span><span>${ksh(o.total)}</span></div>${Object.entries(o.pickups).map(([b, t]) => `<div class="row"><span>${bucketLabel(b)} — ${o.fulfilment === 'delivery' ? 'Delivery to ' + o.location : 'Pickup'}</span><span>${when(t)}</span></div>`).join('')}${deliveryNote}<p class="sub">Keep this serial number. Use it with your phone and email to find your order. You can request a cancellation from My Orders at least a day before pickup — note that we do not offer refunds.</p><button class="ghost" data-print>Print receipt</button> <button class="primary" data-v="menu">New order</button></div>`;
   }
 
+  // My Orders: shown only when the phone number AND the email both match an order (the server decides).
+  async doFind() {
+    this.lookup = { lphone: this.form.lphone, lemail: this.form.lemail };
+    this.found = null; this.lookupNote = '';
+    if (!this.offline) {
+      const l = this.lookup;
+      if (!(l.lphone || '').trim() || !(l.lemail || '').trim()) this.lookupNote = 'Enter both the phone number and the email you ordered with.';
+      else {
+        try { this.found = await this.service.find(l.lphone, l.lemail); }
+        catch (e) { this.lookupNote = `We could not look up your orders (${String(e.message).replace(/[&<>"]/g, '')}). Please try again.`; }
+      }
+    }
+    this.show('orders');
+  }
+
+  async doCancel(serial) {
+    try {
+      if (this.offline) this.service.requestCancel(serial);
+      else { await this.service.requestCancel(serial, this.lookup.lphone, this.lookup.lemail); this.found = await this.service.find(this.lookup.lphone, this.lookup.lemail); }
+    } catch (x) { alert(x.message); }
+    this.show('orders');
+  }
+
   orders() {
-    const l = this.lookup, found = l.lphone && l.lemail ? this.service.repo.find(l.lphone, l.lemail) : null;
+    const l = this.lookup, found = this.offline ? (l.lphone && l.lemail ? this.service.repo.find(l.lphone, l.lemail) : null) : this.found;
     const canRequest = o => ['Received', 'Confirmed'].includes(o.status) && !o.cancelRequested;
     const table = found && (found.length ? `<table><tr><th>Serial</th><th>Earliest</th><th>Total</th><th>Status</th><th></th></tr>${found.map(o => `<tr><td>${o.serial}</td><td>${when(o.when)}</td><td>${ksh(o.total)}</td><td>${o.status === 'Cancelled' ? 'Cancelled' : lineSummary(o)}${o.cancelRequested ? '<br><small>Cancellation requested</small>' : ''}</td><td>${canRequest(o) ? `<button class="ghost" data-cancel="${o.serial}">Request cancellation</button>` : ''}</td></tr>`).join('')}</table><p class="sub">To cancel, send a request at least a day before pickup. The bakery will confirm it. We do not offer refunds.</p>` : '<p class="sub">No orders found for these details.</p>');
-    return `<h2>My orders</h2><p class="sub">Enter the phone number and email you ordered with.</p><div class="box"><div class="two"><div><label>Phone</label><input name="lphone" value="${l.lphone || ''}"></div><div><label>Email</label><input name="lemail" value="${l.lemail || ''}"></div></div><p></p><button class="primary" data-find>Find my orders</button></div>${table ? `<div class="box">${table}</div>` : ''}`;
+    return `<h2>My orders</h2><p class="sub">Enter the phone number and email you ordered with.</p><div class="box"><div class="two"><div><label>Phone</label><input name="lphone" value="${l.lphone || ''}"></div><div><label>Email</label><input name="lemail" value="${l.lemail || ''}"></div></div><p></p><button class="primary" data-find>Find my orders</button></div>${this.lookupNote ? `<div class="box"><p class="sub">${this.lookupNote}</p></div>` : ''}${table ? `<div class="box">${table}</div>` : ''}`;
   }
 
   onClick(e) {
@@ -271,15 +323,17 @@ class App {
       this.picker.open(d.cal, lead);
     }
     else if (d.place !== undefined) this.place();
-    else if (d.find !== undefined) { this.lookup = { lphone: this.form.lphone, lemail: this.form.lemail }; this.show('orders'); }
+    else if (d.find !== undefined) this.doFind();
     else if (d.cancel) {
       // Cancellation is a request: staff approve it from the staff app.
       if (!confirm('Send a cancellation request to the bakery? Note that we do not offer refunds.')) return;
-      try { this.service.requestCancel(d.cancel); } catch (x) { alert(x.message); }
-      this.show('orders');
+      this.doCancel(d.cancel);
     }
     else if (d.print !== undefined) window.print();
     else if (d.close !== undefined) this.picker.close();
   }
 }
-new App();
+// Load the menu and rules from the database first. If that fails, the app still opens with its built-in demo data.
+$('#view').innerHTML = '<p class="sub">Loading the menu…</p>';
+const server = await loadServerData().catch(err => { console.warn('Could not reach the server, using built-in demo data:', err.message); return null; });
+export const app = new App(server);   // exported so the tests can drive the real app

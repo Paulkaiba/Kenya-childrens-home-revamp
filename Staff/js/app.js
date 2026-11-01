@@ -1,6 +1,6 @@
 import { StaffDirectory, LocalStaffDirectory, StaffError, AuthService, LocalSessionStore, LocalStorageOrderRepository, LocalStorageProductRepository, Product, flattenLines, filterLines, nextStatus, productionSummary, STATUS_FLOW, parseTiers, tiersToText, describeTiers, parseDates, buildReport, buildNotifications, rowsToCsv, localDay, buildDashboard } from './staffDomain.js';
 import { getRules, saveRules, DEFAULT_RULES, onDataChange } from '../../shared/store.js';
-
+import { RemoteStaffRepository, RemoteProductRepository, RemoteRulesRepository } from './api.js';
 const $ = s => document.querySelector(s);
 const ksh = n => 'Ksh ' + Number(n).toLocaleString();
 const when = iso => new Date(iso).toLocaleString('en-KE', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
@@ -36,8 +36,10 @@ class StaffApp {
   constructor(staff, directory, auth) {
     Object.assign(this, { staff, directory, auth });
     this.resettingStaff = null; // account id whose password box is open
-    this.repo = new LocalStorageOrderRepository();
-    this.catalog = new LocalStorageProductRepository();
+    this.repo = new RemoteStaffRepository(); 
+    this.catalog = new RemoteProductRepository();
+    this.rulesRepo = new RemoteRulesRepository();
+    this.serverRules = null;
     this.filters = { status: '', category: '', date: '' };
     this.prodDate = today();
     this.prodItem = null; // { category, key } when drilled into one item
@@ -66,7 +68,7 @@ class StaffApp {
       if (['home', 'queue', 'production', 'reports'].includes(this.currentView)) this.show(this.currentView);
     });
     setInterval(() => { if (this.stillSignedIn()) this.refreshBell(); }, 15000);   // keeps "x min ago" fresh too
-    this.show('home');
+    
   }
   // One gate for every way of opening a section (sidebar, back buttons, anything), so a baker or
   // supervisor can never reach a screen their role doesn't allow.
@@ -76,10 +78,8 @@ class StaffApp {
     return true;
   }
   // If this account was removed (even from another tab), send the person back to the login page.
-  stillSignedIn() {
-    const now = this.auth.current();
-    if (!now) { location.href = 'index.html'; return false; }
-    this.staff = now;
+    stillSignedIn() {
+    // The PHP session handles security on the backend. 
     return true;
   }
   show(v) {
@@ -251,37 +251,69 @@ class StaffApp {
   }
 
   // ---- Staff Accounts (managers and supervisors). Only managers can reset passwords. ----
-  accounts() {
+      accounts() {
     const me = this.staff, canReset = !!me.canResetPasswords;
-    const rows = this.directory.list().map(p => {
-      const blocker = this.directory.removeBlocker(me, p.id);
+    
+    // Get the staff list from the database cache
+    const staffList = this.auth.db && this.auth.db.staff ? this.auth.db.staff : [];
+
+    const rows = staffList.map(p => {
       const reset = !canReset ? '' : this.resettingStaff === p.id
         ? `<input type="text" data-pwinput="${p.id}" placeholder="New password (6+ characters)" style="width:200px"> <button class="primary" data-savepw="${p.id}">Save</button> <button class="ghost" data-cancelpw>Cancel</button>`
         : `<button class="ghost" data-resetpw="${p.id}">Reset password</button>`;
-      const remove = blocker ? `<small class="sub">${esc(blocker)}</small>` : `<button class="ghost" data-removestaff="${p.id}">Remove</button>`;
+        
+      const remove = p.id === me.id 
+        ? `<small class="sub">You cannot remove yourself.</small>` 
+        : `<button class="ghost" data-removestaff="${p.id}">Remove</button>`;
+
       return `<tr><td>${esc(p.name)}${p.id === me.id ? ' <span class="tag-hidden">You</span>' : ''}</td><td>${esc(p.username)}</td><td>${ROLE_LABEL[p.role]}</td><td class="acct-actions">${reset} ${remove}</td></tr>`;
     }).join('');
-    const roles = StaffDirectory.manageableRoles(me.role).map(r => `<option value="${r}" ${r === 'baker' ? 'selected' : ''}>${ROLE_LABEL[r]}</option>`).join('');
+
+    const roles = ['manager', 'supervisor', 'baker'].map(r => `<option value="${r}" ${r === 'baker' ? 'selected' : ''}>${ROLE_LABEL[r]}</option>`).join('');
+    
     return `<p class="sub">Add or remove the people who can sign in to this staff area.${canReset ? ' If someone forgets their password, reset it here and tell them the new one.' : ' Password resets are done by a manager.'}</p>
       <div class="box"><b>Add a person</b>
-        <div class="two"><div><label>Full name</label><input data-sf="name"></div><div><label>Username (they sign in with this)</label><input data-sf="username" autocapitalize="off"></div></div>
-        <div class="two"><div><label>Role</label><select data-sf="role">${roles}</select></div><div><label>Starting password (6+ characters)</label><input type="text" data-sf="password"></div></div>
+        <div class="two"><div><label>Full name</label><input data-sf="name" autocomplete="off"></div><div><label>Username (they sign in with this)</label><input data-sf="username" autocomplete="off" autocapitalize="off"></div></div>
+        <div class="two"><div><label>Role</label><select data-sf="role">${roles}</select></div><div><label>Starting password (6+ characters)</label><input type="text" data-sf="password" autocomplete="off"></div></div>
         <p></p><button class="primary" data-addstaff>Add account</button></div>
-      <div class="box table-wrap"><table><tr><th>Name</th><th>Username</th><th>Role</th><th></th></tr>${rows}</table></div>`;
+      
+      <!-- THIS TABLE WAS MISSING -->
+      <div class="box table-wrap">
+        <table>
+          <tr><th>Name</th><th>Username</th><th>Role</th><th></th></tr>
+          ${rows}
+        </table>
+      </div>`;
   }
 
-  addStaff() {
+    async addStaff() {
     const f = k => document.querySelector(`[data-sf="${k}"]`);
+    const name = f('name').value.trim();
+    const username = f('username').value.trim();
+    const role = f('role').value;
+    const password = f('password').value;
+
+    if (!name || !username || password.length < 6) {
+      alert('Please fill all fields. Password must be at least 6 characters.');
+      return;
+    }
+
     try {
-      this.directory.add(this.staff, { name: f('name').value, username: f('username').value, role: f('role').value, password: f('password').value });
+      // Send to PHP (PostgreSQL)
+      await this.auth.addStaff({ name, username, role, password });
+      
+      // Clear the form and refresh the page
+      alert('Staff member added successfully!');
       this.show('staff');
-    } catch (e) { if (e instanceof StaffError) alert(e.message); else throw e; }
+    } catch (err) {
+      alert('Failed to add staff: ' + err.message);
+    }
   }
 
   // ---- Scheduling Rules (manager only, enforced in show()). Nothing here is hardcoded:
   // everything is saved to the shared store and read by the customer site. ----
   rules() {
-    const r = getRules(), products = this.catalog.list();
+    const r = this.serverRules || getRules(), products = this.catalog.list();
     const dayBoxes = DAYS.map((n, i) => `<label class="chk"><input type="checkbox" data-rf-day="${i}" ${r.hours.closedDays.includes(i) ? 'checked' : ''}> ${n}</label>`).join('');
     const prodRow = p => `<div class="row rule-row"><span><b>${p.emoji} ${p.name}</b>${p.hidden ? ' <span class="tag-hidden">Hidden</span>' : ''}<br>
       <small class="sub">${describeTiers(r.productLead?.[p.id])}</small></span>
@@ -304,7 +336,7 @@ class StaffApp {
       <button class="primary" data-saverules>Save rules</button> <button class="ghost" data-resetrules>Reset to defaults</button>`;
   }
 
-  saveRulesForm() {
+    async saveRulesForm() {
     const q = a => document.querySelector(a), f = k => q(`[data-rf="${k}"]`);
     const open = Number(f('open').value), close = Number(f('close').value), capacity = Number(f('capacity').value);
     if (!(open >= 0 && close <= 24 && open < close)) { alert('Opening hour must be earlier than closing hour.'); return; }
@@ -317,9 +349,18 @@ class StaffApp {
     });
     if (bad.length) { alert('Please fix these lines (use “more than, days”, like 30, 1):\n\n' + bad.join('\n')); return; }
     const closedDays = [...document.querySelectorAll('[data-rf-day]')].filter(b => b.checked).map(b => Number(b.dataset.rfDay));
-    saveRules({ productLead, hours: { open, close, closedDays }, closedDates: parseDates(f('closedDates').value), dailyCapacity: capacity });
-    alert('Saved. The customer site will follow these rules.');
-    this.show('rules');
+    
+    const newRules = { productLead, hours: { open, close, closedDays }, closedDates: parseDates(f('closedDates').value), dailyCapacity: capacity };
+    
+    // Save to database
+    try {
+      await this.rulesRepo.save(newRules);
+      this.serverRules = newRules; // Update local memory
+      alert('Saved to database. The customer site will follow these rules.');
+      this.show('rules');
+    } catch (err) {
+      alert('Failed to save rules: ' + err.message);
+    }
   }
 
   // ---- Menu Management (manager only, enforced in show()) ----
@@ -372,7 +413,7 @@ class StaffApp {
     </div>`;
   }
 
-  saveProductForm(existingId) {
+  async saveProductForm(existingId) {
     const f = s => document.querySelector(`[data-pf="${s}"]`);
     const name = f('name').value.trim();
     if (!name) { alert('Name is required.'); return; }
@@ -426,7 +467,7 @@ class StaffApp {
     catch (err) { alert(err.message); }
   }
 
-  onClick(e) {
+  async onClick(e) {
     if (!this.stillSignedIn()) return;
     if (!e.target.closest('.bell-wrap')) $('#notif-panel').hidden = true;   // click anywhere else closes the bell
     const d = e.target.closest('button')?.dataset; if (!d) return;
@@ -443,30 +484,57 @@ class StaffApp {
     else if (d.csv !== undefined) { if (this.staff.isManager) this.downloadCsv(); }
     else if (d.printreport !== undefined) window.print();
     else if (d.item) { const [category, key] = d.item.split('|'); this.prodItem = { category, key: decodeURIComponent(key) }; this.show('item'); }
-    else if (d.lineadvance) {
+            else if (d.lineadvance) {
       const [serial, lineId] = d.lineadvance.split('|');
-      this.repo.updateLineStatus(serial, lineId, nextStatus(this.repo.get(serial).lines.find(l => l.id === lineId).status));
-      this.show('item');
+      try {
+        const order = this.allOrders().find(o => o.serial === serial);
+        const line = order.lines.find(l => l.id === lineId);
+        const next = nextStatus(line.status);
+        
+        console.log("Marking next status:", next); // <--- ADD THIS
+        
+        if (next) {
+          await this.auth.updateLineStatus(serial, lineId, next);
+          console.log("Successfully updated in database!"); // <--- ADD THIS
+          this.show('item'); 
+        }
+      } catch (err) {
+        alert('Failed to update status: ' + err.message);
+      }
     }
     else if (d.cancel) { if (confirm(`Cancel order ${d.cancel}? This cancels every item in it.`)) { this.repo.cancelOrder(d.cancel); this.show('queue'); } }
     else if (d.addstaff !== undefined) { this.addStaff(); }
-    else if (d.removestaff) {
-      const id = Number(d.removestaff), who = this.directory.byId(id);
-      if (who && confirm(`Remove ${who.name}? They will no longer be able to sign in.`)) {
-        try { this.directory.remove(this.staff, id); } catch (err) { if (err instanceof StaffError) alert(err.message); else throw err; }
-        this.show('staff');
+          else if (d.removestaff) {
+      if (confirm(`Remove this staff member? They will no longer be able to sign in.`)) {
+        try {
+          await this.auth.removeStaff(Number(d.removestaff));
+          this.show('staff');
+        } catch (err) {
+          alert('Failed to remove staff: ' + err.message);
+        }
       }
     }
-    else if (d.resetpw) { this.resettingStaff = Number(d.resetpw); this.show('staff'); }
-    else if (d.cancelpw !== undefined) { this.resettingStaff = null; this.show('staff'); }
+    else if (d.resetpw) { 
+      this.resettingStaff = Number(d.resetpw); 
+      this.show('staff'); 
+    }
+    else if (d.cancelpw !== undefined) { 
+      this.resettingStaff = null; 
+      this.show('staff'); 
+    }
     else if (d.savepw) {
-      const id = Number(d.savepw), who = this.directory.byId(id);
+      const id = Number(d.savepw);
+      const newPassword = document.querySelector(`[data-pwinput="${id}"]`).value;
+      if (newPassword.length < 6) { alert("Password must be 6+ characters."); return; }
+      
       try {
-        this.directory.resetPassword(this.staff, id, document.querySelector(`[data-pwinput="${id}"]`).value);
+        await this.auth.resetPassword(id, newPassword);
         this.resettingStaff = null;
-        alert(`Password changed for ${who ? who.name : 'this account'}. Tell them the new password.`);
+        alert('Password changed successfully.');
         this.show('staff');
-      } catch (err) { if (err instanceof StaffError) alert(err.message); else throw err; }
+      } catch (err) {
+        alert('Failed to reset password: ' + err.message);
+      }
     }
     else if (d.saverules !== undefined) { this.saveRulesForm(); }
     else if (d.resetrules !== undefined) { if (confirm('Reset every scheduling rule to the original defaults?')) { saveRules(DEFAULT_RULES); this.show('rules'); } }
@@ -475,23 +543,72 @@ class StaffApp {
     else if (d.removephoto !== undefined) { this.formImage = ''; this.renderPhotoPreview(); }
     else if (d.canceledit !== undefined) { this.editingProduct = null; this.show('menu'); }
     else if (d.saveproduct !== undefined) { this.saveProductForm(d.saveproduct || null); }
-    else if (d.deleteproduct) { if (confirm(`Delete this product from the menu? This cannot be undone.`)) { this.catalog.remove(d.deleteproduct); this.show('menu'); } }
+    else if (d.deleteproduct) 
+      { 
+    if (confirm(`Delete this product from the menu? This cannot be undone.`)) 
+      { 
+        try {
+            await this.catalog.remove(d.deleteproduct); 
+            this.show('menu'); 
+        } catch (err) {
+            alert('Failed to delete: ' + err.message);
+        }
+    } 
+}
     else if (d.v) this.show(d.v);
   }
-  onChange(e) {
+  async onChange(e) {
     if (!this.stillSignedIn()) return;
     if (e.target.dataset.pfFile !== undefined) { this.handlePhoto(e.target.files[0]); }
     else if (e.target.dataset.pfPath !== undefined) { this.formImage = e.target.value.trim(); this.renderPhotoPreview(); }
     else if (e.target.dataset.filter) { this.filters[e.target.dataset.filter] = e.target.value; this.show('queue'); }
     else if (e.target.dataset.rep) { this.rep = { ...this.rep, [e.target.dataset.rep]: e.target.value, range: e.target.dataset.rep === 'basis' ? this.rep.range : 'custom' }; this.show('reports'); }
     else if (e.target.id === 'prod-date') { this.prodDate = e.target.value; this.show('production'); }
-    else if (e.target.dataset.soldout) { this.catalog.setSoldOut(e.target.dataset.soldout, e.target.checked); this.show('menu'); }
-    else if (e.target.dataset.visible) { this.catalog.setHidden(e.target.dataset.visible, !e.target.checked); this.show('menu'); }
+else if (e.target.dataset.soldout) {
+      try {
+        await this.catalog.setSoldOut(e.target.dataset.soldout, e.target.checked);
+        this.show('menu'); // Re-render only AFTER the database saves
+      } catch (err) {
+        alert('Failed to update sold out status: ' + err.message);
+      }
+    }    
+    else if (e.target.dataset.visible) {
+      try {
+        await this.catalog.setHidden(e.target.dataset.visible, !e.target.checked);
+        this.show('menu'); // Re-render only AFTER the database saves
+      } catch (err) {
+        alert('Failed to update visibility: ' + err.message);
+      }
+    }
+    
   }
 }
 
-const directory = new LocalStaffDirectory();
-const auth = new AuthService(directory, new LocalSessionStore());
-const staff = auth.current();
-if (!staff) location.href = 'index.html';
-else new StaffApp(staff, directory, auth);
+const authRepo = new RemoteStaffRepository();
+
+authRepo.getCurrentSession().then(staff => {
+  if (!staff) {
+    location.href = 'index.html';
+    return;
+  }
+
+  // Pass the authRepo as both directory and auth to avoid breaking the old UI code
+  const app = new StaffApp(staff, authRepo, authRepo);
+  
+  Promise.all([
+    app.repo.fetchFromServer(),
+    app.catalog.fetchFromServer(),
+    app.rulesRepo.fetchFromServer().then(r => { app.serverRules = r; }),
+    app.auth.fetchFromServer() // <--- This is the key
+  ]).then(() => {
+    app.show('home');
+  }).catch(err => {
+    console.error("Data load failed:", err);
+    document.getElementById('view').innerHTML = `
+      <div class="box" style="border-color: #dc2626; background: #fee2e2; color: #991b1b;">
+        <h3>Failed to load data from the database</h3>
+        <p>${err.message}</p>
+        <button class="primary" onclick="location.reload()">Try Again</button>
+      </div>`;
+  });
+});

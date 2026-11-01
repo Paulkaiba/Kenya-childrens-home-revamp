@@ -1,0 +1,4 @@
+# --- add these lines to your existing .gitignore ---
+config/database.php
+mail-config.php
+vendor/

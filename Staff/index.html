@@ -40,14 +40,27 @@
   </section>
 </main>
 <script type="module">
-  import { LocalStaffDirectory, AuthService, LocalSessionStore, AuthError } from './js/staffDomain.js';
-  const auth = new AuthService(new LocalStaffDirectory(), new LocalSessionStore());
-  if (auth.current()) location.href = 'dashboard.html';
+  import { RemoteStaffRepository } from './js/api.js';
+  
+  const authRepo = new RemoteStaffRepository();
+  
+  // If already logged in, redirect to dashboard
+  authRepo.getCurrentSession().then(staff => {
+    if (staff) location.href = 'dashboard.html';
+  });
+
   const $ = id => document.getElementById(id);
-  const go = () => {
-    try { auth.login($('u').value, $('p').value); location.href = 'dashboard.html'; }
-    catch (e) { if (e instanceof AuthError) $('err').textContent = e.message; else throw e; }
+  
+  const go = async () => {
+    try {
+      $('err').textContent = 'Logging in...';
+      await authRepo.login($('u').value, $('p').value);
+      location.href = 'dashboard.html';
+    } catch (e) {
+      $('err').textContent = e.message;
+    }
   };
+  
   $('go').addEventListener('click', go);
   ['u', 'p'].forEach(id => $(id).addEventListener('keydown', e => { if (e.key === 'Enter') go(); }));
   $('showpw').addEventListener('click', () => {
