@@ -584,6 +584,7 @@ else if (e.target.dataset.soldout) {
   }
 }
 
+// ---- CLIENT APP RUNTIME INITIALIZATION LOOP ----
 const authRepo = new RemoteStaffRepository();
 
 authRepo.getCurrentSession().then(staff => {
@@ -599,9 +600,40 @@ authRepo.getCurrentSession().then(staff => {
     app.repo.fetchFromServer(),
     app.catalog.fetchFromServer(),
     app.rulesRepo.fetchFromServer().then(r => { app.serverRules = r; }),
-    app.auth.fetchFromServer() // <--- This is the key
+    app.auth.fetchFromServer()
   ]).then(() => {
     app.show('home');
+
+    // 🚀 INTEGRATE THE LIVE INTERVAL TIMER SECURELY INSIDE ACCESS SHAPES
+    // Import your live engine helper directly from your shared project utilities folder
+    import('../../shared/live.js').then(({ startLive }) => {
+      window.liveServerWatcher = startLive({
+        url: new URL('../../PHP/Staff/changes.php?scope=orders,menu,rules', import.meta.url),
+        intervalMs: 1000, // Check for variations every 1 second
+        onChange: async () => {
+          console.log("Database update detected via 1s interval! Syncing view screens safely...");
+          
+          try {
+            // 1. Fetch fresh transactional logs straight from your PostgreSQL server tables
+            await app.repo.fetchFromServer();
+            await app.catalog.fetchFromServer();
+            
+            // 2. Re-render the active screen template instantly without reloading the entire window
+            if (app.currentView) {
+              app.show(app.currentView);
+            }
+            console.log("UI Layout refreshed successfully with zero page blinks.");
+          } catch (syncErr) {
+            console.warn("Live sync interface reload warning:", syncErr);
+          }
+        },
+        onUnauthorized: () => {
+          // If the worker's authentication state expires, route them safely to the login portal
+          location.href = 'index.html';
+        }
+      });
+    }).catch(err => console.error("Failed to mount live.js module wrapper:", err));
+
   }).catch(err => {
     console.error("Data load failed:", err);
     document.getElementById('view').innerHTML = `

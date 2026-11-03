@@ -50,7 +50,33 @@ try {
     $check->execute([':ser' => $serial]);
     if ((int)$check->fetchColumn() === 0) {
         $pdo->prepare("UPDATE customer_order SET status = 'Collected' WHERE serial = :ser")->execute([':ser' => $serial]);
+        $triggeredStatus = 'Collected';
+    } else {
+        $triggeredStatus = $newStatus;
     }
+
+    // ---- START PRODUCTION EMAIL DISPATCH LINE ----
+    // Query directly from your schema columns layout: customer_name, customer_email
+    $query = $pdo->prepare("SELECT customer_name, customer_email FROM customer_order WHERE serial = :ser LIMIT 1");
+    $query->execute([':ser' => $serial]);
+    $orderRow = $query->fetch(PDO::FETCH_ASSOC);
+
+    if ($orderRow && !empty($orderRow['customer_email'])) {
+        $customerEmail = $orderRow['customer_email'];
+        $customerName  = $orderRow['customer_name'];
+
+        require_once __DIR__ . '/../config/mailer.php';
+        
+        $normalizedStatus = strtolower(trim($triggeredStatus));
+
+        if ($normalizedStatus === 'ready') {
+            OrderMailer::sendOrderReady($customerEmail, $customerName, $serial);
+        } 
+        elseif ($normalizedStatus === 'collected' || $normalizedStatus === 'delivered') {
+            OrderMailer::sendFeedbackRequest($customerEmail, $customerName, $serial);
+        }
+    }
+    // ---- END PRODUCTION EMAIL DISPATCH LINE ----
 
     $pdo->commit();
     
