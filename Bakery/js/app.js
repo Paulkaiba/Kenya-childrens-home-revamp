@@ -337,3 +337,20 @@ class App {
 $('#view').innerHTML = '<p class="sub">Loading the menu…</p>';
 const server = await loadServerData().catch(err => { console.warn('Could not reach the server, using built-in demo data:', err.message); return null; });
 export const app = new App(server);   // exported so the tests can drive the real app
+import { startLive } from '../../shared/live.js';
+
+// Open up the 1-second live-reload listener loop for the customer storefront
+const liveCustomerWatcher = startLive({
+  url: new URL('../../PHP/Staff/changes.php?scope=menu,rules', import.meta.url),
+  intervalMs: 1000, // Explicitly set to query every 1 second (1000 milliseconds)
+  onChange: async () => {
+    console.log("Store catalog adjustment detected via 1s interval! Refreshing inventory arrays...");
+    
+    // Updates sold-out statuses and daily capacities silently without interrupting active checkouts
+    if (typeof catalog !== 'undefined' && catalog.refresh) {
+        await catalog.refresh();
+    }
+  }
+});
+
+window.liveCustomerWatcher = liveCustomerWatcher;
