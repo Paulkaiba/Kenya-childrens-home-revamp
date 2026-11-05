@@ -3,12 +3,14 @@
 <title>KCH Bakery</title>
 <link rel="icon" href="../assets/logo.png">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../Styles/Bakery/bakery.css"></head>
+<link rel="stylesheet" href="../Styles/Bakery/bakery.css">
+<link rel="stylesheet" href="../Styles/Bakery/account.css"></head>
 <body><div class="shell">
 <nav class="side"><div class="logo"><img src="../assets/logo.png" alt="Kenya Children's Homes logo" onerror="this.remove()"><b>KCH Bakery</b><small>Kenya Children's Homes</small></div>
 <button data-v="menu" class="active">Menu / Products</button><button data-v="orders">My Orders</button>
 <a href="../Landing/index.html">‹ Back to home</a></nav>
-<main><header><div class="head-left"><a class="home-btn" href="../Landing/index.html">🏠 Home</a><span class="tagline">Every purchase supports the children at KCH</span></div><button class="cta" data-v="checkout">Cart (<span id="cart-count">0</span>)</button></header>
+<main><header><div class="head-left"><a class="home-btn" href="../Landing/index.html">🏠 Home</a><span class="tagline">Every purchase supports the children at KCH</span></div>
+<div class="head-actions"><button class="ghost" id="account-btn" data-v="orders">Sign in</button><button class="cta" data-v="checkout">Cart (<span id="cart-count">0</span>)</button></div></header>
 <div id="view"></div></main></div>
 <button id="fab-cart" data-v="cart" hidden>🛒 <span id="fab-count">0</span></button>
 <div id="modal" hidden><div class="sheet"><div id="modal-body"></div><button class="ghost" data-close>Close</button></div></div>

@@ -1,0 +1,23 @@
+/* Append to Styles/Bakery/bakery.css. Uses the same brand tokens. */
+.auth-box{max-width:420px}
+.auth-box .chips{margin:0 0 4px}
+.auth-err{color:var(--kch-primary);font-size:13px;margin-top:10px}
+.order-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
+.order-head .serial{font-size:16px;margin:0}
+.collection{border-top:1px solid var(--kch-line);margin-top:14px;padding-top:12px}
+.collection .actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px}
+.track{list-style:none;display:flex;margin:16px 0 10px}
+.track li{flex:1;text-align:center;font-size:12px;color:var(--kch-accent);position:relative}
+.track li::before{content:"";display:block;width:20px;height:20px;border-radius:50%;background:var(--kch-line);margin:0 auto 6px;position:relative;z-index:1}
+.track li::after{content:"";position:absolute;top:9px;left:calc(-50% + 10px);width:calc(100% - 20px);height:3px;background:var(--kch-line)}
+.track li:first-child::after{display:none}
+.track li.done::before,.track li.done::after,.track li.now::after{background:#16A34A}
+.track li.now::before{background:var(--kch-primary);box-shadow:0 0 0 4px var(--kch-tint-line)}
+.track li.done,.track li.now{color:var(--kch-heading);font-weight:600}
+.cancelled-note{color:var(--kch-accent);font-weight:600}
+
+/* Header: Sign in / Hi, Name next to the cart button */
+.head-actions{display:flex;gap:10px;align-items:center}
+
+.auth-box a{color:var(--kch-primary);font-weight:600}
+.note .ghost.small{margin-left:8px}
