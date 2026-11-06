@@ -5,5 +5,5 @@ return [
     'port'     => 5432,
     'dbname'   => 'kch_bakery',
     'user'     => 'kch_app',
-    'password' => 'your_new_password',
+    'password' => 'your_password_here',
 ];

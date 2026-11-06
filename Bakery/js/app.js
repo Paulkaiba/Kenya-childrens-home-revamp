@@ -1,6 +1,7 @@
 import { policyFromRules, Cart, Customer, Scheduler, Clock, OrderService, LocalStorageOrderRepository, LocalStorageProductRepository, ValidationError } from './domain.js';
 import { initStore, getRules, isDayFull, onDataChange, localYmd } from '../../shared/store.js';
 import { RemoteProductRepository, RemoteOrderService, loadServerData } from './remote.js';
+import { Account, renderAuth, renderOrders, renderReset, renderVerify, stopLive } from './account.js';
 
 initStore();
 
@@ -65,7 +66,7 @@ class App {
     document.addEventListener('click', e => this.onClick(e));
     document.addEventListener('input', e => {
       if (e.target.dataset.unit !== undefined) { this.pending.units[+e.target.dataset.unit][e.target.dataset.field] = e.target.value; return; }
-      if (e.target.name) this.form[e.target.name] = e.target.value;
+      if (e.target.name && !e.target.closest('#auth-form')) this.form[e.target.name] = e.target.value;
     });
     document.addEventListener('change', e => {
       if (e.target.dataset.unit !== undefined) { this.pending.units[+e.target.dataset.unit][e.target.dataset.field] = e.target.value; this.show('product'); return; }
@@ -84,6 +85,7 @@ class App {
       setInterval(() => this.refreshFromServer(), 30000);
       document.addEventListener('visibilitychange', () => { if (!document.hidden) this.refreshFromServer(); });
     }
+    document.addEventListener('account-changed', () => this.updateAccountUi());
     this.show('menu');
   }
 
@@ -112,6 +114,7 @@ class App {
   // Cart badge always reflects true state first; rendering errors then show a
   // recoverable message instead of silently leaving the old screen in place.
   show(v) {
+    stopLive();
     this.currentView = v;
     document.querySelectorAll('.side button').forEach(b => b.classList.toggle('active', b.dataset.v === (v === 'product' ? 'menu' : v)));
     $('#cart-count').textContent = this.cart.count;
@@ -120,6 +123,7 @@ class App {
     try {
       const notice = this.offline ? '<div class="box" style="border-color:#f0ad4e;background:#fff8e6"><b>Server not reachable.</b> Showing the built-in demo menu; orders are saved only in this browser.</div>' : '';
       $('#view').innerHTML = notice + this.screens[v].call(this);
+      if (v === 'orders') this.mountAccount();
     } catch (err) {
       console.error(err);
       $('#view').innerHTML = `<div class="box"><b>Something went wrong showing this page.</b><p class="sub">${err.message}</p><button class="primary" data-v="menu">Back to menu</button></div>`;
@@ -236,6 +240,12 @@ class App {
   checkout() {
     if (this.cart.isEmpty) return this.cartScreen();
     const f = this.form, isDelivery = f.fulfilment === 'delivery';
+    const me = Account.customer;
+if (me) {
+  if (!f.name) f.name = me.name;
+  if (!f.phone) f.phone = '0' + me.phone.slice(3);
+  if (!f.email) f.email = me.email;
+}
     const rows = this.cart.lines.map(l => `<div class="row"><span>${l.product.name} (${l.size.label}${l.flavour ? ', ' + l.flavour : ''})${l.message ? ' — “' + l.message + '”' : ''} ×${l.qty}</span><span>${ksh(l.qty * l.size.price)} <button class="icon-btn" data-remove="${l.key}" title="Remove item" aria-label="Remove item">🗑</button></span></div>`).join('');
     return `<h2>Pre-order form</h2><p class="sub">Add your details and choose when you need the order.</p><button class="ghost" data-v="cart">‹ Back to cart</button><div class="two"><div class="box">
       <label>Full name</label><input name="name" value="${f.name || ''}">
@@ -295,12 +305,38 @@ class App {
     this.show('orders');
   }
 
+guestOrders() {
+  const l = this.lookup, found = this.offline ? (l.lphone && l.lemail ? this.service.repo.find(l.lphone, l.lemail) : null) : this.found;
+  const canRequest = o => ['Received', 'Confirmed'].includes(o.status) && !o.cancelRequested;
+  const table = found && (found.length ? `<table><tr><th>Serial</th><th>Earliest</th><th>Total</th><th>Status</th><th></th></tr>${found.map(o => `<tr><td>${o.serial}</td><td>${when(o.when)}</td><td>${ksh(o.total)}</td><td>${o.status === 'Cancelled' ? 'Cancelled' : lineSummary(o)}${o.cancelRequested ? '<br><small>Cancellation requested</small>' : ''}</td><td>${canRequest(o) ? `<button class="ghost" data-cancel="${o.serial}">Request cancellation</button>` : ''}</td></tr>`).join('')}</table><p class="sub">To cancel, send a request at least a day before pickup. The bakery will confirm it. We do not offer refunds.</p>` : '<p class="sub">No orders found for these details.</p>');
+  return `<p class="sub">Enter the phone number and email you ordered with.</p><div class="box"><div class="two"><div><label>Phone</label><input name="lphone" value="${l.lphone || ''}"></div><div><label>Email</label><input name="lemail" value="${l.lemail || ''}"></div></div><p></p><button class="primary" data-find>Find my orders</button></div>${this.lookupNote ? `<div class="box"><p class="sub">${this.lookupNote}</p></div>` : ''}${table ? `<div class="box">${table}</div>` : ''}`;
+}
+
   orders() {
-    const l = this.lookup, found = this.offline ? (l.lphone && l.lemail ? this.service.repo.find(l.lphone, l.lemail) : null) : this.found;
-    const canRequest = o => ['Received', 'Confirmed'].includes(o.status) && !o.cancelRequested;
-    const table = found && (found.length ? `<table><tr><th>Serial</th><th>Earliest</th><th>Total</th><th>Status</th><th></th></tr>${found.map(o => `<tr><td>${o.serial}</td><td>${when(o.when)}</td><td>${ksh(o.total)}</td><td>${o.status === 'Cancelled' ? 'Cancelled' : lineSummary(o)}${o.cancelRequested ? '<br><small>Cancellation requested</small>' : ''}</td><td>${canRequest(o) ? `<button class="ghost" data-cancel="${o.serial}">Request cancellation</button>` : ''}</td></tr>`).join('')}</table><p class="sub">To cancel, send a request at least a day before pickup. The bakery will confirm it. We do not offer refunds.</p>` : '<p class="sub">No orders found for these details.</p>');
-    return `<h2>My orders</h2><p class="sub">Enter the phone number and email you ordered with.</p><div class="box"><div class="two"><div><label>Phone</label><input name="lphone" value="${l.lphone || ''}"></div><div><label>Email</label><input name="lemail" value="${l.lemail || ''}"></div></div><p></p><button class="primary" data-find>Find my orders</button></div>${this.lookupNote ? `<div class="box"><p class="sub">${this.lookupNote}</p></div>` : ''}${table ? `<div class="box">${table}</div>` : ''}`;
+  return `<div id="account-area"><p class="sub">Loading…</p></div>
+    <h3 class="menu-group">Ordered without an account?<small>Find your order with your phone and email</small></h3>
+    ${this.guestOrders()}`;
+}
+
+async mountAccount() {
+  const area = $('#account-area');
+  if (!area) return;
+  if (this.offline) { area.innerHTML = '<p class="sub">Signing in needs the server, which is not reachable right now.</p>'; return; }
+    const m = location.hash.match(/^#(reset|verify)=([A-Za-z0-9]+)$/);
+  if (m) {
+    history.replaceState(null, '', location.pathname + location.search);   // keep the token out of the address bar
+    return m[1] === 'reset' ? renderReset(area, m[2], () => this.show('orders')) : renderVerify(area, m[2], () => this.show('orders'));
   }
+  const me = await Account.init();
+  const el = $('#account-area');
+  if (!el || this.currentView !== 'orders') return;   // the customer moved to another page meanwhile
+  if (me) renderOrders(el); else renderAuth(el, () => this.show('orders'));
+}
+
+updateAccountUi() {
+  const b = $('#account-btn');
+  if (b) b.textContent = Account.customer ? 'Hi, ' + Account.customer.name.split(' ')[0] : 'Sign in';
+}
 
   onClick(e) {
     const d = e.target.closest('button')?.dataset; if (!d) return;
@@ -337,20 +373,5 @@ class App {
 $('#view').innerHTML = '<p class="sub">Loading the menu…</p>';
 const server = await loadServerData().catch(err => { console.warn('Could not reach the server, using built-in demo data:', err.message); return null; });
 export const app = new App(server);   // exported so the tests can drive the real app
-import { startLive } from '../../shared/live.js';
-
-// Open up the 1-second live-reload listener loop for the customer storefront
-const liveCustomerWatcher = startLive({
-  url: new URL('../../PHP/Staff/changes.php?scope=menu,rules', import.meta.url),
-  intervalMs: 1000, // Explicitly set to query every 1 second (1000 milliseconds)
-  onChange: async () => {
-    console.log("Store catalog adjustment detected via 1s interval! Refreshing inventory arrays...");
-    
-    // Updates sold-out statuses and daily capacities silently without interrupting active checkouts
-    if (typeof catalog !== 'undefined' && catalog.refresh) {
-        await catalog.refresh();
-    }
-  }
-});
-
-window.liveCustomerWatcher = liveCustomerWatcher;
+Account.init();
+if (/^#(orders|reset=|verify=)/.test(location.hash)) app.show('orders');
