@@ -7,7 +7,7 @@ use Dompdf\Options;
 require_once __DIR__ . '/../../vendor/autoload.php';
 
 class OrderMailer {
-    private static function getMailerInstance() {
+    public static function getMailerInstance() {
         $mail = new PHPMailer(true);
         
         // SMTP SERVER SETUP

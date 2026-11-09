@@ -1,2 +1,6 @@
 assets/photos/
 assets/videos/
+config/database.php
+PHP/config/database.php
+mail-config.php
+vendor/

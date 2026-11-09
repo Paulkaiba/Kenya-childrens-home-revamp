@@ -11,6 +11,11 @@ $result = kch_create_order(db(), kch_read_json());
 if (!$result['ok']) { 
     json_out(['ok' => false, 'errors' => $result['errors']], 422); 
 }
+if (session_status() === PHP_SESSION_NONE) session_start();
+if (!empty($_SESSION['customer_id'])) {
+    db()->prepare('UPDATE customer_order SET customer_id = :c WHERE serial = :s')
+        ->execute([':c' => (int)$_SESSION['customer_id'], ':s' => $result['order']['serial']]);
+}
 
 // ---- START EMAIL INTEGRATION BOUNDARY ----
 $savedOrder = $result['order'];

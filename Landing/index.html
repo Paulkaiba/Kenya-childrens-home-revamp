@@ -17,6 +17,7 @@
     --radius:14px;
     --shadow:0 10px 30px rgba(15,23,42,.10);
     --font-main:'Inter',system-ui,-apple-system,sans-serif;
+    
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html{scroll-behavior:smooth;scroll-padding-top:76px}
@@ -44,6 +45,9 @@
   .nav{position:sticky;top:0;z-index:30;background:rgba(255,255,255,.92);backdrop-filter:blur(10px);border-bottom:1px solid transparent;transition:border-color .2s ease,box-shadow .2s ease}
   .nav.scrolled{border-color:var(--kch-line);box-shadow:0 4px 18px rgba(15,23,42,.06)}
   .nav .in{max-width:1120px;margin:auto;padding:10px 20px;display:flex;align-items:center;justify-content:space-between;gap:16px}
+     .nav-actions{display:flex;gap:8px;align-items:center}
+   .btn.outline{background:#fff;color:var(--kch-primary);border-color:var(--kch-primary)}
+   .btn.outline:hover{background:var(--kch-tint);border-color:var(--kch-primary);box-shadow:none}
   .brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:var(--kch-heading);font-weight:800;font-size:16px;line-height:1.15}
   .brand img{height:44px;width:auto}
   .brand small{display:block;font-weight:500;color:var(--kch-accent);font-size:12px}
@@ -163,6 +167,12 @@
 </style>
 <noscript><style>.reveal{opacity:1;transform:none}</style></noscript>
 </head>
+<script>
+fetch('../PHP/Customer/login.php').then(r => r.json()).then(d => {
+  const a = document.querySelector('.nav-actions .outline');
+  if (d.ok && a) a.textContent = 'Hi, ' + d.customer.name.split(' ')[0];
+}).catch(() => {});
+</script>
 <body>
 
 <header class="nav" id="nav">
@@ -171,7 +181,7 @@
     <nav class="links" aria-label="Sections">
       <a href="#about">About</a><a href="#products">What we bake</a><a href="#gallery">Gallery</a><a href="#contact">Contact</a>
     </nav>
-    <a class="btn small" href="../Bakery/index.html">Order Online</a>
+       <div class="nav-actions"><a class="btn small outline" href="../Bakery/index.html#orders">Sign in</a><a class="btn small" href="../Bakery/index.html">Order Online</a></div>
   </div>
 </header>
 
