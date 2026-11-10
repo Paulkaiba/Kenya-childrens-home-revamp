@@ -82,7 +82,7 @@ class App {
     });
     // Live updates from the database: pick up menu and rule changes (a manager hiding a product, a price change...) without a reload.
     if (server) {
-      setInterval(() => this.refreshFromServer(), 30000);
+      setInterval(() => this.refreshFromServer(), 1000);
       document.addEventListener('visibilitychange', () => { if (!document.hidden) this.refreshFromServer(); });
     }
     document.addEventListener('account-changed', () => this.updateAccountUi());
@@ -113,7 +113,16 @@ class App {
 
   // Cart badge always reflects true state first; rendering errors then show a
   // recoverable message instead of silently leaving the old screen in place.
-  show(v) {
+    show(v) {
+    // Force sign-in gate before showing cart or checkout
+    if (['cart', 'checkout'].includes(v) && !Account.customer) {
+      stopLive();
+      this.currentView = 'orders';
+      document.querySelectorAll('.side button').forEach(b => b.classList.toggle('active', b.dataset.v === 'orders'));
+      renderAuth($('#view'), () => this.show('cart'));
+      return;
+    }
+
     stopLive();
     this.currentView = v;
     document.querySelectorAll('.side button').forEach(b => b.classList.toggle('active', b.dataset.v === (v === 'product' ? 'menu' : v)));
@@ -129,6 +138,9 @@ class App {
       $('#view').innerHTML = `<div class="box"><b>Something went wrong showing this page.</b><p class="sub">${err.message}</p><button class="primary" data-v="menu">Back to menu</button></div>`;
     }
   }
+
+
+
   findProduct(id) { return this.catalog.get(id); }
   dateButton(bucket, lead) {
     const picked = this.form.whenByBucket[bucket];
@@ -312,11 +324,10 @@ guestOrders() {
   return `<p class="sub">Enter the phone number and email you ordered with.</p><div class="box"><div class="two"><div><label>Phone</label><input name="lphone" value="${l.lphone || ''}"></div><div><label>Email</label><input name="lemail" value="${l.lemail || ''}"></div></div><p></p><button class="primary" data-find>Find my orders</button></div>${this.lookupNote ? `<div class="box"><p class="sub">${this.lookupNote}</p></div>` : ''}${table ? `<div class="box">${table}</div>` : ''}`;
 }
 
-  orders() {
-  return `<div id="account-area"><p class="sub">Loading…</p></div>
-    <h3 class="menu-group">Ordered without an account?<small>Find your order with your phone and email</small></h3>
-    ${this.guestOrders()}`;
-}
+    orders() {
+    return `<div id="account-area"><p class="sub">Loading your account details…</p></div>`;
+  }
+
 
 async mountAccount() {
   const area = $('#account-area');
@@ -335,8 +346,50 @@ async mountAccount() {
 
 updateAccountUi() {
   const b = $('#account-btn');
-  if (b) b.textContent = Account.customer ? 'Hi, ' + Account.customer.name.split(' ')[0] : 'Sign in';
+  if (!b) return;
+
+  // Remove any existing dropdown menu first
+  document.getElementById('account-dropdown')?.remove();
+
+  if (!Account.customer) {
+    b.textContent = 'Sign in';
+    b.onclick = null;
+    return;
+  }
+
+  const firstName = Account.customer.name.split(' ')[0];
+  b.textContent = `Hi, ${firstName} ▾`;
+
+  // Create the dropdown menu
+  const menu = document.createElement('div');
+  menu.id = 'account-dropdown';
+  menu.style.cssText = 'position:absolute; right:0; top:110%; background:#fff; border:1px solid #ddd; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.1); padding:6px; z-index:999; min-width:130px;';
+  menu.innerHTML = `<button type="button" id="nav-signout" style="width:100%; text-align:left; background:none; border:none; padding:8px 12px; cursor:pointer; color:#d93025; font-weight:600; border-radius:6px;">Sign out</button>`;
+  menu.hidden = true;
+
+  // Position parent relative so dropdown aligns right underneath the button
+  b.parentElement.style.position = 'relative';
+  b.parentElement.appendChild(menu);
+
+  // Toggle dropdown when clicking the name button (preventing default navigation)
+  b.onclick = e => {
+    e.preventDefault();
+    e.stopPropagation();
+    menu.hidden = !menu.hidden;
+  };
+
+  // Sign out when clicking the dropdown option
+  menu.querySelector('#nav-signout').onclick = async e => {
+    e.stopPropagation();
+    menu.hidden = true;
+    await Account.logout();
+    this.show('menu');
+  };
+
+  // Close dropdown if clicking anywhere else on the page
+  document.addEventListener('click', () => { menu.hidden = true; });
 }
+
 
   onClick(e) {
     const d = e.target.closest('button')?.dataset; if (!d) return;
@@ -348,7 +401,17 @@ updateAccountUi() {
     else if (d.add !== undefined) this.addToCart();
     else if (d.remove) { this.cart.remove(d.remove); this.show(this.currentView === 'checkout' ? 'checkout' : 'cart'); }
     else if (d.menucat) { this.menuCat = d.menucat; this.show('menu'); }
-    else if (d.v) this.show(d.v);
+     else if (d.v) {
+      // If they want to view the cart or proceed to checkout, force authentication first
+      if (['cart', 'checkout'].includes(d.v) && !Account.customer) {
+        const area = $('#view');
+        // Render auth, and when successfully signed in, send them to the cart view
+        renderAuth(area, () => this.show('cart'));
+      } else {
+        this.show(d.v);
+      }
+    }
+
     else if (d.cal) {
       let lead = this.cart.leadHoursFor(d.cal, this.policy);
       if (this.currentView === 'product') {
@@ -359,12 +422,7 @@ updateAccountUi() {
       this.picker.open(d.cal, lead);
     }
     else if (d.place !== undefined) this.place();
-    else if (d.find !== undefined) this.doFind();
-    else if (d.cancel) {
-      // Cancellation is a request: staff approve it from the staff app.
-      if (!confirm('Send a cancellation request to the bakery? Note that we do not offer refunds.')) return;
-      this.doCancel(d.cancel);
-    }
+    
     else if (d.print !== undefined) window.print();
     else if (d.close !== undefined) this.picker.close();
   }
