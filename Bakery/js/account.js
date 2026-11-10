@@ -21,16 +21,42 @@ async function call(name, body) {
   return d;
 }
 
+let idleTimer = null;
+const IDLE_MS = 5 * 60 * 1000; // 5 minutes in milliseconds
+
+function resetIdleTimer() {
+  clearTimeout(idleTimer);
+  if (Account.customer) {
+    idleTimer = setTimeout(() => Account.logout(), IDLE_MS);
+  }
+}
+
+// Reset the 5-minute timer whenever the user moves the mouse, clicks, types, or scrolls
+['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart'].forEach(evt =>
+  document.addEventListener(evt, resetIdleTimer, { passive: true })
+);
+
 export const Account = {
   customer: null,
-  async init() {                               // who is signed in right now?
+  async init() {
     try { const r = await fetch(api('login.php')); const d = await r.json(); setCustomer(d.ok ? d.customer : null); }
     catch { setCustomer(null); }
     return this.customer;
   },
+  async logout() {
+    stopLive();
+    clearTimeout(idleTimer);
+    try { await call('logout.php', {}); } catch { /* ignore network errors on logout */ }
+    setCustomer(null);
+  },
 };
-// Every sign-in, sign-out or check goes through here, so the page header can say "Sign in" or "Hi, Name".
-function setCustomer(c) { Account.customer = c; document.dispatchEvent(new CustomEvent('account-changed')); }
+
+function setCustomer(c) {
+  Account.customer = c;
+  resetIdleTimer();
+  document.dispatchEvent(new CustomEvent('account-changed'));
+}
+
 
 let live = null;
 export const stopLive = () => { if (live) live.stop(); live = null; };
